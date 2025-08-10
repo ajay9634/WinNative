@@ -488,7 +488,6 @@
     <string name="invert_x_axis_right">Invert X Axis (Right Stick)</string>
     <string name="invert_y_axis_right">Invert Y Axis (Right Stick)</string>
     <string name="save">Save</string>
-    <string name="installing_winetricks">Installing dependencies with winetricks...</string>
     <string name="use_xr">Use OpenXR integration</string>
 
 
@@ -622,4 +621,5 @@ E.g. <b>META</b> for <i>META key</i>, \n
     <string name="vkbasalt_sharpness_effects">Sharpness Effect</string>
     <string name="vkbasalt_sharpness_level">Sharpness Level</string>
     <string name="vkbasalt_sharpness_denoise">Sharpeness Denoise</string>
+    <string name="shutdown">Shutdown</string>
 </resources>

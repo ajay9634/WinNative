@@ -237,7 +237,7 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
         AppUtils.keepScreenOn(this);
         setContentView(R.layout.xserver_display_activity);
 
-        final PreloaderDialog preloaderDialog = new PreloaderDialog(this);
+        preloaderDialog = new PreloaderDialog(this);
         preferences = PreferenceManager.getDefaultSharedPreferences(this);
 
 
@@ -804,30 +804,37 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
     }
 
     private void exit() {
-        if (midiHandler != null) midiHandler.stop();
-        // Unregister sensor listener to avoid memory leaks
-        if (sensorManager != null) sensorManager.unregisterListener(gyroListener);
-        if (environment != null) environment.stopEnvironmentComponents();
-        if (preloaderDialog != null && preloaderDialog.isShowing()) preloaderDialog.close();
-        if (winHandler != null) winHandler.stop();
-        if (wineRequestHandler != null) wineRequestHandler.stop();
-        /* Gracefully terminate all running wine processes */
-        ProcessHelper.terminateAllWineProcesses();
-        /* Wait until all processes have gracefully terminated, forcefully killing them only after a certain amount of time */
-        long start = System.currentTimeMillis();
-        while (!ProcessHelper.listRunningWineProcesses().isEmpty()) {
-            long elapsed = System.currentTimeMillis() - start;
-            if (elapsed >= 1500) {
-                break;
+        preloaderDialog.showOnUiThread(R.string.shutdown);
+        handler.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                savePlaytimeData(); // Save on destroy
+                handler.removeCallbacks(savePlaytimeRunnable);
+                if (midiHandler != null) midiHandler.stop();
+                // Unregister sensor listener to avoid memory leaks
+                if (sensorManager != null) sensorManager.unregisterListener(gyroListener);
+                if (environment != null) environment.stopEnvironmentComponents();
+                if (preloaderDialog != null && preloaderDialog.isShowing()) preloaderDialog.closeOnUiThread();
+                if (winHandler != null) winHandler.stop();
+                if (wineRequestHandler != null) wineRequestHandler.stop();
+                /* Gracefully terminate all running wine processes */
+                ProcessHelper.terminateAllWineProcesses();
+                /* Wait until all processes have gracefully terminated, forcefully killing them only after a certain amount of time */
+                long start = System.currentTimeMillis();
+                while (!ProcessHelper.listRunningWineProcesses().isEmpty()) {
+                    long elapsed = System.currentTimeMillis() - start;
+                    if (elapsed >= 1500) {
+                        break;
+                    }
+                }
+                preloaderDialog.closeOnUiThread();
+                AppUtils.restartApplication(getApplicationContext());
             }
-        }
-        AppUtils.restartApplication(this);
+        }, 1000);
     }
 
     @Override
     protected void onDestroy() {
-        savePlaytimeData(); // Save on destroy
-        handler.removeCallbacks(savePlaytimeRunnable);
         super.onDestroy();
     }
 
@@ -836,11 +843,7 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
         super.onStop();
         savePlaytimeData();
         handler.removeCallbacks(savePlaytimeRunnable);
-
-
-
     }
-
 
     @Override
     public void onBackPressed() {
@@ -954,6 +957,7 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
                 openTerminal();
                 return true;
             case R.id.main_menu_exit:
+                drawerLayout.closeDrawers();
                 exit();
                 break;
         }
