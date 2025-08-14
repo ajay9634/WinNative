@@ -1569,6 +1569,13 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
         String presentMode = graphicsDriverConfig.get("presentMode");
         envVars.put("MESA_VK_WSI_PRESENT_MODE", presentMode);
 
+        String syncFrame = graphicsDriverConfig.get("syncFrame");
+        if (syncFrame.equals("1"))
+            envVars.put("MESA_VK_WSI_DEBUG", "forcesync");
+
+        String disablePresentWait = graphicsDriverConfig.get("disablePresentWait");
+        envVars.put("WRAPPER_DISABLE_PRESENT_WAIT", "1");
+
         if (!vkbasaltConfig.isEmpty()) {
             envVars.put("ENABLE_VKBASALT", "1");
             envVars.put("VKBASALT_CONFIG", vkbasaltConfig);

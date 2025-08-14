@@ -616,6 +616,8 @@ E.g. <b>META</b> for <i>META key</i>, \n
     <string name="fexcore_version">FEXCore Version</string>
     <string name="graphics_driver_max_device_memory">Max Device Memory</string>
     <string name="graphics_driver_adrenotools_turnip">Use Adrenotools Turnip</string>
+    <string name="graphics_driver_sync_frame">Sync Every Frame</string>
+    <string name="graphics_driver_disable_present_wait">Disable KHR_present_wait</string>
     <string name="graphics_driver_present_modes">Present Modes</string>
     <string name="graphics_driver_vulkan_version">Vulkan Version</string>
     <string name="vkbasalt">vkBasalt</string>
