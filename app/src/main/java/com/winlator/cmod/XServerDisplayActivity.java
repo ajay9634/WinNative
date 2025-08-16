@@ -1942,7 +1942,7 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
         if (frameRating == null) return;
 
         if (property != null) {
-            if (!window.getClassName().isEmpty() && frameRatingWindowId == -1 && property.nameAsString().contains("_MESA_DRV")) {
+            if (frameRatingWindowId == -1 && property.nameAsString().contains("_MESA_DRV")) {
                 frameRatingWindowId = window.id;
                 Log.d("XServerDisplayActivity", "Showing hud for Window " + window.getName());
                 frameRating.update();
@@ -1954,7 +1954,7 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
                 runOnUiThread(() -> frameRating.setGpuName(property.toString()));
             }
         }
-        else if (!window.getClassName().isEmpty() && frameRatingWindowId != -1) {
+        else if (frameRatingWindowId != -1) {
             frameRatingWindowId = -1;
             Log.d("XServerDisplayActivity", "Hiding hud for Window " + window.getName());
             runOnUiThread(() -> frameRating.setVisibility(View.GONE));
