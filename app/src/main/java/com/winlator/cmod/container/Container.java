@@ -1,10 +1,8 @@
 package com.winlator.cmod.container;
 
 import android.os.Environment;
-import android.util.Log;
 
-import com.winlator.cmod.XrActivity;
-import com.winlator.cmod.box86_64.Box86_64Preset;
+import com.winlator.cmod.box64.Box64Preset;
 import com.winlator.cmod.core.DefaultVersion;
 import com.winlator.cmod.core.EnvVars;
 import com.winlator.cmod.core.FileUtils;
@@ -61,7 +59,7 @@ public class Container {
     private String cpuList;
     private String cpuListWoW64;
     private String desktopTheme = WineThemeManager.DEFAULT_DESKTOP_THEME;
-    private String box64Preset = Box86_64Preset.COMPATIBILITY;
+    private String box64Preset = Box64Preset.COMPATIBILITY;
     private File rootDir;
     private JSONObject extraData;
     private String midiSoundFont = "";

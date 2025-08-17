@@ -26,7 +26,7 @@ import com.google.android.material.tabs.TabLayout;
 import com.winlator.cmod.ContainerDetailFragment;
 import com.winlator.cmod.R;
 import com.winlator.cmod.ShortcutsFragment;
-import com.winlator.cmod.box86_64.Box86_64PresetManager;
+import com.winlator.cmod.box64.Box64PresetManager;
 import com.winlator.cmod.container.ContainerManager;
 import com.winlator.cmod.container.Shortcut;
 import com.winlator.cmod.contents.ContentProfile;
@@ -49,8 +49,6 @@ import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-
-import kotlin.random.Random;
 
 public class ShortcutSettingsDialog extends ContentDialog {
     private final ShortcutsFragment fragment;
@@ -265,7 +263,7 @@ public class ShortcutSettingsDialog extends ContentDialog {
 
 
         final Spinner sBox64Preset = findViewById(R.id.SBox64Preset);
-        Box86_64PresetManager.loadSpinner("box64", sBox64Preset, shortcut.getExtra("box64Preset", shortcut.container.getBox64Preset()));
+        Box64PresetManager.loadSpinner("box64", sBox64Preset, shortcut.getExtra("box64Preset", shortcut.container.getBox64Preset()));
 
         final Spinner sFEXCoreVersion = findViewById(R.id.SFEXCoreVersion);
         FEXCoreManager.loadFEXCoreVersion(context, contentsManager, sFEXCoreVersion, shortcut);
@@ -447,7 +445,7 @@ public class ShortcutSettingsDialog extends ContentDialog {
                 String envVars = envVarsView.getEnvVars();
                 shortcut.putExtra("envVars", !envVars.isEmpty() ? envVars : null);
 
-                String box64Preset = Box86_64PresetManager.getSpinnerSelectedId(sBox64Preset);
+                String box64Preset = Box64PresetManager.getSpinnerSelectedId(sBox64Preset);
                 shortcut.putExtra("box64Preset", !box64Preset.equals(shortcut.container.getBox64Preset()) ? box64Preset : null);
 
 
@@ -499,7 +497,7 @@ public class ShortcutSettingsDialog extends ContentDialog {
     private boolean isFieldSetLabel(String text) {
         return text.equalsIgnoreCase("DirectX") ||
                 text.equalsIgnoreCase("General") ||
-                text.equalsIgnoreCase("Box86/Box64") ||
+                text.equalsIgnoreCase("Box64") ||
                 text.equalsIgnoreCase("Input Controls") ||
                 text.equalsIgnoreCase("Game Controller") ||
                 text.equalsIgnoreCase("System");

@@ -599,7 +599,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="8dp"
-                    android:id="@+id/box86box64Frame">
+                    android:id="@+id/box64Frame">
 
                     <LinearLayout style="@style/FieldSet">
                         <TextView
@@ -627,9 +627,9 @@
                     </LinearLayout>
 
                     <TextView
-                        android:id="@+id/TVBox86Box64"
+                        android:id="@+id/TVBox64"
                         style="@style/FieldSetLabel"
-                        android:text="@string/box86_box64" />
+                        android:text="@string/box64" />
                 </FrameLayout>
                 
                 <FrameLayout
