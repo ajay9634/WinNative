@@ -89,9 +89,6 @@ public class SettingsFragment extends Fragment {
     private CheckBox cbInvertGyroY;
 
     private boolean isRestoreAction = false;
-
-    private boolean enableLegacyInputMode = false;
-
     private CheckBox cbEnableBigPictureMode;
     private CheckBox cbEnableCustomApiKey;
     private EditText etCustomApiKey;
@@ -163,18 +160,6 @@ public class SettingsFragment extends Fragment {
         // Initialize the xinput toggle checkbox
         cbXinputToggle = view.findViewById(R.id.CBXinputToggle);
         cbXinputToggle.setChecked(preferences.getBoolean("xinput_toggle", false));
-
-        // Inside onCreateView in SettingsFragment.java
-        CheckBox cbLegacyInputMode = view.findViewById(R.id.CBLegacyInputMode);
-        enableLegacyInputMode = preferences.getBoolean("legacy_mode_enabled", false);
-        cbLegacyInputMode.setChecked(enableLegacyInputMode);
-
-        // Listen to changes and update the temporary state
-        cbLegacyInputMode.setOnCheckedChangeListener((buttonView, isChecked) -> {
-            enableLegacyInputMode = isChecked;
-            preferences.edit().putBoolean("legacy_mode_enabled", isChecked).apply();
-        });
-
 
         // Initialize gyro enable checkbox
         cbGyroEnabled = view.findViewById(R.id.CBGyroEnabled);
@@ -426,8 +411,6 @@ public class SettingsFragment extends Fragment {
                 editor.remove("wine_debug_channels");
             }
             else if (preferences.contains("wine_debug_channels")) editor.remove("wine_debug_channels");
-
-            editor.putBoolean("legacy_mode_enabled", enableLegacyInputMode); // Save the 7.1.2 legacy mode state
 
             // Save Big Picture Mode setting
             editor.putBoolean("enable_big_picture_mode", ((CheckBox) view.findViewById(R.id.CBEnableBigPictureMode)).isChecked());

@@ -952,12 +952,9 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
         }
     }
 
-    private void extractInputDLLs(boolean isLegacyInput) {
-        String inputAsset = isLegacyInput ? "legacy_input_dlls.tzst" : "input_dlls.tzst";
+    private void extractInputDLLs() {
+        String inputAsset = "input_dlls.tzst";
         File wineFolder = new File(imageFs.getWinePath() + "/lib/wine/");
-
-        Log.d("XServerDisplayActivity", "Extracting input dlls to " + wineFolder.getPath());
-
         boolean success = TarCompressorUtils.extract(TarCompressorUtils.Type.ZSTD, this, inputAsset, wineFolder);
         if (!success)
             Log.d("XServerDisplayActivity", "Failed to extract input dlls");
@@ -1025,8 +1022,7 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
             containerDataChanged = true;
         }
 
-        boolean isLegacyInput = preferences.getBoolean("legacy_mode_enabled", false);
-        extractInputDLLs(isLegacyInput);
+        extractInputDLLs();
 
         if (containerDataChanged) container.saveData();
     }

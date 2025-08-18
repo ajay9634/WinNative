@@ -91,11 +91,6 @@ public class WinHandler {
     private boolean isGyroActive = false;
     private boolean isToggleMode;
 
-
-    public void setUseLegacyInputMethod(boolean useLegacy) {
-        this.useLegacyInputMethod = useLegacy;
-    }
-
     public void setGyroSensitivityX(float sensitivity) {
         this.gyroSensitivityX = sensitivity;
     }
