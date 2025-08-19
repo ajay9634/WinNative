@@ -6,6 +6,7 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
+import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Build;
@@ -38,10 +39,13 @@ import com.google.android.material.navigation.NavigationView;
 import com.winlator.cmod.R;
 import com.winlator.cmod.contentdialog.ContentDialog;
 import com.winlator.cmod.core.Callback;
+import com.winlator.cmod.core.ImageUtils;
 import com.winlator.cmod.core.PreloaderDialog;
 import com.winlator.cmod.container.ContainerManager;
+import com.winlator.cmod.core.WineThemeManager;
 import com.winlator.cmod.xenvironment.ImageFsInstaller;
 
+import java.io.File;
 import java.util.List;
 
 public class MainActivity extends AppCompatActivity implements NavigationView.OnNavigationItemSelectedListener {
@@ -50,11 +54,11 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
     public static final byte OPEN_FILE_REQUEST_CODE = 2;
     public static final byte EDIT_INPUT_CONTROLS_REQUEST_CODE = 3;
     public static final byte OPEN_DIRECTORY_REQUEST_CODE = 4;
+    public static final byte OPEN_IMAGE_REQUEST_CODE = 5;
     private DrawerLayout drawerLayout;
     public final PreloaderDialog preloaderDialog = new PreloaderDialog(this);
     private boolean editInputControls = false;
     private int selectedProfileId;
-    private Callback<Uri> openFileCallback;
     private SharedPreferences sharedPreferences;
     private ContainerManager containerManager;
 
@@ -214,10 +218,6 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
         }
 
         show(new ContainersFragment(), true);  // Pass `true` to trigger the reverse animation
-    }
-
-    public void setOpenFileCallback(Callback<Uri> openFileCallback) {
-        this.openFileCallback = openFileCallback;
     }
 
     private boolean requestAppPermissions() {
@@ -390,5 +390,16 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
         SpannableString spanString = new SpannableString(menuItem.getTitle());
         spanString.setSpan(new ForegroundColorSpan(color), 0, spanString.length(), 0);
         menuItem.setTitle(spanString);
+    }
+
+    @Override
+    public void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == OPEN_IMAGE_REQUEST_CODE && resultCode == RESULT_OK) {
+            Bitmap bitmap = ImageUtils.getBitmapFromUri(this, data.getData(), 1280);
+            if (bitmap == null) return;
+            File userWallpaperFile = WineThemeManager.getUserWallpaperFile(this);
+            ImageUtils.save(bitmap, userWallpaperFile, Bitmap.CompressFormat.PNG, 100);
+        }
     }
 }
