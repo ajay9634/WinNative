@@ -175,21 +175,6 @@ public class ContainerDetailFragment extends Fragment {
 
         Spinner sDesktopBackgroundType = view.findViewById(R.id.SDesktopBackgroundType);
         sDesktopBackgroundType.setPopupBackgroundResource(isDarkMode ? R.drawable.content_dialog_background_dark : R.drawable.content_dialog_background);
-        // Registry Keys
-        Spinner SCSMT = view.findViewById(R.id.SCSMT);
-        SCSMT.setPopupBackgroundResource(isDarkMode ? R.drawable.content_dialog_background_dark : R.drawable.content_dialog_background);
-
-        Spinner SGPUName = view.findViewById(R.id.SGPUName);
-        SGPUName.setPopupBackgroundResource(isDarkMode ? R.drawable.content_dialog_background_dark : R.drawable.content_dialog_background);
-
-        Spinner sOffscreenRenderingMode = view.findViewById(R.id.SOffscreenRenderingMode);
-        sOffscreenRenderingMode.setPopupBackgroundResource(isDarkMode ? R.drawable.content_dialog_background_dark : R.drawable.content_dialog_background);
-
-        Spinner sStrictShaderMath = view.findViewById(R.id.SStrictShaderMath);
-        sStrictShaderMath.setPopupBackgroundResource(isDarkMode ? R.drawable.content_dialog_background_dark : R.drawable.content_dialog_background);
-
-        Spinner sVideoMemorySize = view.findViewById(R.id.SVideoMemorySize);
-        sVideoMemorySize.setPopupBackgroundResource(isDarkMode ? R.drawable.content_dialog_background_dark : R.drawable.content_dialog_background);
 
         Spinner sMouseWarpOverride = view.findViewById(R.id.SMouseWarpOverride);
         sMouseWarpOverride.setPopupBackgroundResource(isDarkMode ? R.drawable.content_dialog_background_dark : R.drawable.content_dialog_background);
@@ -268,7 +253,7 @@ public class ContainerDetailFragment extends Fragment {
         TextView desktopLabel = view.findViewById(R.id.TVDesktop);
         applyFieldSetLabelStyle(desktopLabel, isDarkMode);  // Apply the dark or light mode styles
 
-        TextView registryKeysLabel = view.findViewById(R.id.TVRegistryKeys);
+        TextView registryKeysLabel = view.findViewById(R.id.TVDirectInput);
         applyFieldSetLabelStyle(registryKeysLabel, isDarkMode);  // Apply the dark or light mode styles
 
         // Win Components TextViews
@@ -641,32 +626,8 @@ public class ContainerDetailFragment extends Fragment {
     private void saveWineRegistryKeys(View view) {
         File userRegFile = new File(container.getRootDir(), ".wine/user.reg");
         try (WineRegistryEditor registryEditor = new WineRegistryEditor(userRegFile)) {
-            Spinner sCSMT = view.findViewById(R.id.SCSMT);
-            registryEditor.setDwordValue("Software\\Wine\\Direct3D", "csmt", sCSMT.getSelectedItemPosition() != 0 ? 3 : 0);
-
-            Spinner sGPUName = view.findViewById(R.id.SGPUName);
-            try {
-                JSONObject gpuName = gpuCards.getJSONObject(sGPUName.getSelectedItemPosition());
-                registryEditor.setDwordValue("Software\\Wine\\Direct3D", "VideoPciDeviceID", gpuName.getInt("deviceID"));
-                registryEditor.setDwordValue("Software\\Wine\\Direct3D", "VideoPciVendorID", gpuName.getInt("vendorID"));
-            }
-            catch (JSONException e) {}
-
-            Spinner sOffscreenRenderingMode = view.findViewById(R.id.SOffscreenRenderingMode);
-            registryEditor.setStringValue("Software\\Wine\\Direct3D", "OffScreenRenderingMode", sOffscreenRenderingMode.getSelectedItem().toString().toLowerCase(Locale.ENGLISH));
-
-            Spinner sStrictShaderMath = view.findViewById(R.id.SStrictShaderMath);
-            registryEditor.setDwordValue("Software\\Wine\\Direct3D", "strict_shader_math", sStrictShaderMath.getSelectedItemPosition());
-
-            Spinner sVideoMemorySize = view.findViewById(R.id.SVideoMemorySize);
-            String videoMemorySize = StringUtils.parseNumber(sVideoMemorySize.getSelectedItem());
-            registryEditor.setStringValue("Software\\Wine\\Direct3D", "VideoMemorySize", videoMemorySize);
-
             Spinner sMouseWarpOverride = view.findViewById(R.id.SMouseWarpOverride);
             registryEditor.setStringValue("Software\\Wine\\DirectInput", "MouseWarpOverride", sMouseWarpOverride.getSelectedItem().toString().toLowerCase(Locale.ENGLISH));
-
-            registryEditor.setStringValue("Software\\Wine\\Direct3D", "shader_backend", "glsl");
-            registryEditor.setStringValue("Software\\Wine\\Direct3D", "UseGLSL", "enabled");
         }
     }
 
@@ -705,27 +666,6 @@ public class ContainerDetailFragment extends Fragment {
         File userRegFile = new File(containerDir, ".wine/user.reg");
 
         try (WineRegistryEditor registryEditor = new WineRegistryEditor(userRegFile)) {
-            List<String> stateList = Arrays.asList(context.getString(R.string.disable), context.getString(R.string.enable));
-            Spinner sCSMT = view.findViewById(R.id.SCSMT);
-            sCSMT.setAdapter(new ArrayAdapter<>(context, android.R.layout.simple_spinner_dropdown_item, stateList));
-            sCSMT.setSelection(registryEditor.getDwordValue("Software\\Wine\\Direct3D", "csmt", 3) != 0 ? 1 : 0);
-
-            Spinner sGPUName = view.findViewById(R.id.SGPUName);
-            loadGPUNameSpinner(sGPUName, registryEditor.getDwordValue("Software\\Wine\\Direct3D", "VideoPciDeviceID", 1728));
-
-            List<String> offscreenRenderingModeList = Arrays.asList("Backbuffer", "FBO");
-            Spinner sOffscreenRenderingMode = view.findViewById(R.id.SOffscreenRenderingMode);
-            sOffscreenRenderingMode.setAdapter(new ArrayAdapter<>(context, android.R.layout.simple_spinner_dropdown_item, offscreenRenderingModeList));
-            AppUtils.setSpinnerSelectionFromValue(sOffscreenRenderingMode, registryEditor.getStringValue("Software\\Wine\\Direct3D", "OffScreenRenderingMode", "fbo"));
-
-            Spinner sStrictShaderMath = view.findViewById(R.id.SStrictShaderMath);
-            sStrictShaderMath.setAdapter(new ArrayAdapter<>(context, android.R.layout.simple_spinner_dropdown_item, stateList));
-            sStrictShaderMath.setSelection(Math.min(registryEditor.getDwordValue("Software\\Wine\\Direct3D", "strict_shader_math", 1), 1));
-
-            Spinner sVideoMemorySize = view.findViewById(R.id.SVideoMemorySize);
-            String videoMemorySize = registryEditor.getStringValue("Software\\Wine\\Direct3D", "VideoMemorySize", "2048");
-            AppUtils.setSpinnerSelectionFromNumber(sVideoMemorySize, videoMemorySize);
-
             List<String> mouseWarpOverrideList = Arrays.asList(context.getString(R.string.disable), context.getString(R.string.enable), context.getString(R.string.force));
             Spinner sMouseWarpOverride = view.findViewById(R.id.SMouseWarpOverride);
             sMouseWarpOverride.setAdapter(new ArrayAdapter<>(context, android.R.layout.simple_spinner_dropdown_item, mouseWarpOverrideList));
