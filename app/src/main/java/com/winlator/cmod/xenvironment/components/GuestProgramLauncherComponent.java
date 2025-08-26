@@ -382,33 +382,4 @@ public class GuestProgramLauncherComponent extends EnvironmentComponent {
             if (pid != -1) ProcessHelper.resumeProcess(pid);
         }
     }
-
-    public String execShellCommand(String command) {
-        StringBuilder output = new StringBuilder();
-        EnvVars envVars = new EnvVars();
-        ImageFs imageFs = environment.getImageFs();
-
-        envVars.put("PATH", imageFs.getRootDir().getPath() + "/usr/bin:/usr/local/bin:" + imageFs.getWinePath() + "/bin");
-
-        // Execute the command and capture its output
-        try {
-            java.lang.Process process = Runtime.getRuntime().exec(command, envVars.toStringArray(), imageFs.getRootDir());
-            BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
-            BufferedReader errorReader = new BufferedReader(new InputStreamReader(process.getErrorStream()));
-
-            String line;
-            while ((line = reader.readLine()) != null) {
-                output.append(line).append("\n");
-            }
-            while ((line = errorReader.readLine()) != null) {
-                output.append(line).append("\n");
-            }
-
-            process.waitFor();
-        } catch (Exception e) {
-            output.append("Error: ").append(e.getMessage());
-        }
-
-        return output.toString();
-    }
 }
