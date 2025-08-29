@@ -71,6 +71,7 @@ import java.util.concurrent.Executors;
 public class SettingsFragment extends Fragment {
     public static final String DEFAULT_WINE_DEBUG_CHANNELS = "warn,err,fixme";
     public static final String DEFAULT_WINLATOR_PATH = Environment.getExternalStorageDirectory().getPath() + "/Winlator";
+    public static final String DEFAULT_SHORTCUT_EXPORT_PATH = DEFAULT_WINLATOR_PATH + "/Shortcuts";
     private Callback<Uri> installSoundFontCallback;
     private PreloaderDialog preloaderDialog;
     private SharedPreferences preferences;
@@ -96,6 +97,7 @@ public class SettingsFragment extends Fragment {
     boolean isDarkMode;
 
     private static final int REQUEST_CODE_WINLATOR_PATH = 1002;
+    private static final int REQUEST_CODE_SHORTCUT_EXPORT_PATH = 1003;
     private static final int REQUEST_CODE_INSTALL_SOUNDFONT = 1001;
 
     @Override
@@ -236,6 +238,25 @@ public class SettingsFragment extends Fragment {
         btnChooseWinlatorPath.setOnClickListener(v -> {
             Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE); // Launch File Picker for directory selection
             startActivityForResult(intent, REQUEST_CODE_WINLATOR_PATH);
+        });
+
+        Button btChooseShortcutExportPath = view.findViewById(R.id.BTChooseShortcutExportPath);
+        TextView tvShortcutExportPath = view.findViewById(R.id.TVShortcutExportPath);
+
+        savedUriString = preferences.getString("shortcuts_export_path_uri", null);
+
+        if (savedUriString != null) {
+            Uri savedUri = Uri.parse(savedUriString);
+            String displayPath = FileUtils.getFilePathFromUri(context, savedUri);
+            tvShortcutExportPath.setText(displayPath != null ? displayPath : savedUriString);
+        }
+        else {
+            tvShortcutExportPath.setText(DEFAULT_SHORTCUT_EXPORT_PATH);
+        }
+
+        btChooseShortcutExportPath.setOnClickListener(v -> {
+            Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+            startActivityForResult(intent, REQUEST_CODE_SHORTCUT_EXPORT_PATH);
         });
 
         final Spinner sBox64Preset = view.findViewById(R.id.SBox64Preset);
@@ -860,11 +881,13 @@ public class SettingsFragment extends Fragment {
             Uri uri = data.getData();
 
             if (uri != null) {
+
+                SharedPreferences.Editor editor = preferences.edit();
+
                 switch (requestCode) {
 
                     case REQUEST_CODE_WINLATOR_PATH:
                         // Save the selected URI as a string in SharedPreferences
-                        SharedPreferences.Editor editor = preferences.edit();
                         editor.putString("winlator_path_uri", uri.toString());
                         editor.apply();
 
@@ -886,6 +909,30 @@ public class SettingsFragment extends Fragment {
                         TextView tvWinlatorPath = getView().findViewById(R.id.TVWinlatorPath);
                         tvWinlatorPath.setText(fullPath != null ? fullPath : uri.toString());
                         break;
+
+                    case REQUEST_CODE_SHORTCUT_EXPORT_PATH:
+                        editor.putString("shortcuts_export_path_uri", uri.toString());
+                        editor.apply();
+
+                        // Take persistable URI permission
+                        try {
+                            // Take persistable URI permission with explicit flags
+                            requireContext().getContentResolver().takePersistableUriPermission(
+                                    uri,
+                                    Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                            );
+                        } catch (SecurityException e) {
+                            AppUtils.showToast(getContext(), "Unable to take persistable permissions: " + e.getMessage());
+                        }
+
+                        // Convert the URI to an absolute path and display it
+                        String path = FileUtils.getFilePathFromUri(getContext(), uri);
+
+                        // Update the TextView with the absolute path or URI string if conversion fails
+                        TextView tvShortcutExportPath = getView().findViewById(R.id.TVShortcutExportPath);
+                        tvShortcutExportPath.setText(path != null ? path : uri.toString());
+
+
 
                     // Case for installing a SoundFont
                     case REQUEST_CODE_INSTALL_SOUNDFONT:
