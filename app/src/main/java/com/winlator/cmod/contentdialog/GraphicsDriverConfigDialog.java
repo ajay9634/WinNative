@@ -110,7 +110,7 @@ public class GraphicsDriverConfigDialog extends ContentDialog {
         else
             availableExtensions = new ArrayList<>(Arrays.asList(GPUInformation.enumerateExtensions(null, context)));
 
-        return (String[]) availableExtensions.toArray();
+        return availableExtensions.toArray(new String[0]);
     }
   
     public GraphicsDriverConfigDialog(View anchor, String graphicsDriver, TextView graphicsDriverVersionView) {
@@ -313,3 +313,4 @@ public class GraphicsDriverConfigDialog extends ContentDialog {
     }
 
 }
+
