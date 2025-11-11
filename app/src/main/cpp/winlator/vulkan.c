@@ -14,7 +14,7 @@
 #define printf(...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)
 
 VkInstance instance;
-VkPhysicalDevice physicalDevice;
+VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
 PFN_vkGetPhysicalDeviceProperties getPhysicalDeviceProperties;
 PFN_vkEnumerateDeviceExtensionProperties enumerateDeviceExtensionProperties;
 PFN_vkEnumeratePhysicalDevices enumeratePhysicalDevices;
@@ -146,16 +146,25 @@ static VkResult enumerate_physical_devices() {
 
     result = enumeratePhysicalDevices(instance, &deviceCount, NULL);
 
-    if (result != VK_SUCCESS || deviceCount < 1)
+    if (result != VK_SUCCESS)
         return result;
 
-    VkPhysicalDevice pdevices[deviceCount];
+    if (deviceCount < 1)
+        return VK_ERROR_INITIALIZATION_FAILED;
+
+    VkPhysicalDevice *pdevices = malloc(sizeof(VkPhysicalDevice) * deviceCount);
+    if (!pdevices)
+        return VK_ERROR_OUT_OF_HOST_MEMORY;
+
     result = enumeratePhysicalDevices(instance, &deviceCount, pdevices);
 
     if (result != VK_SUCCESS)
         return result;
 
     physicalDevice = pdevices[0];
+
+    if (physicalDevice == VK_NULL_HANDLE)
+        return VK_ERROR_INITIALIZATION_FAILED;
 
     return VK_SUCCESS;
 }
@@ -244,7 +253,7 @@ Java_com_winlator_cmod_core_GPUInformation_enumerateExtensions(JNIEnv *env, jcla
                                        extensionProperties);
 
     if (result != VK_SUCCESS) {
-        printf("Failed to query extension");
+        printf("Failed to query extensions");
         return (*env)->NewObjectArray(env, 0, (*env)->FindClass(env, "java/lang/String"), NULL);
     }
 
