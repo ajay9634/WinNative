@@ -147,7 +147,7 @@ public class GraphicsDriverConfigDialog extends ContentDialog {
         setIcon(R.drawable.icon_settings);
         setTitle(anchor.getContext().getString(R.string.graphics_driver_configuration));
 
-        String graphicsDriverConfig = anchor.getTag().toString();
+        String graphicsDriverConfig = anchor.getTag() != null ? anchor.getTag().toString() : "";
 
         sVersion = findViewById(R.id.SGraphicsDriverVersion);
         sVulkanVersion = findViewById(R.id.SGraphicsDriverVulkanVersion);
@@ -200,7 +200,7 @@ public class GraphicsDriverConfigDialog extends ContentDialog {
 
             @Override
             public void onNothingSelected(AdapterView<?> parent) {
-                selectedVersion = sVersion.getSelectedItem().toString();
+                selectedVersion = sVersion.getSelectedItem() != null ? sVersion.getSelectedItem().toString() : "";
                 Log.d(TAG, "User selected version: " + selectedVersion);
             }
         });
@@ -213,7 +213,7 @@ public class GraphicsDriverConfigDialog extends ContentDialog {
 
             @Override
             public void onNothingSelected(AdapterView<?> parent) {
-
+                selectedVulkanVersion = sVulkanVersion.getSelectedItem() != null ? sVulkanVersion.getSelectedItem().toString() : "1.3";
             }
         });
 
@@ -225,7 +225,7 @@ public class GraphicsDriverConfigDialog extends ContentDialog {
 
             @Override
             public void onNothingSelected(AdapterView<?> parent) {
-
+                selectedGPUName = sGPUName.getSelectedItem() != null ? sGPUName.getSelectedItem().toString() : "Device";
             }
         });
 
@@ -237,7 +237,7 @@ public class GraphicsDriverConfigDialog extends ContentDialog {
 
             @Override
             public void onNothingSelected(AdapterView<?> parent) {
-
+                selectedDeviceMemory = sMaxDeviceMemory.getSelectedItem() != null ? sMaxDeviceMemory.getSelectedItem().toString() : "0";
             }
         });
 
@@ -249,7 +249,7 @@ public class GraphicsDriverConfigDialog extends ContentDialog {
 
             @Override
             public void onNothingSelected(AdapterView<?> parent) {
-
+                selectedPresentMode = sPresentMode.getSelectedItem() != null ? sPresentMode.getSelectedItem().toString() : "mailbox";
             }
         });
 
@@ -261,7 +261,7 @@ public class GraphicsDriverConfigDialog extends ContentDialog {
 
             @Override
             public void onNothingSelected(AdapterView<?> adapterView) {
-
+                selectedResourceType = sResourceType.getSelectedItem() != null ? sResourceType.getSelectedItem().toString() : "auto";
             }
         });
 
@@ -273,7 +273,7 @@ public class GraphicsDriverConfigDialog extends ContentDialog {
 
             @Override
             public void onNothingSelected(AdapterView<?> adapterView) {
-
+                selectedBCnEmulation = sBCnEmulation.getSelectedItem() != null ? sBCnEmulation.getSelectedItem().toString() : "auto";
             }
         });
 
@@ -285,19 +285,19 @@ public class GraphicsDriverConfigDialog extends ContentDialog {
 
             @Override
             public void onNothingSelected(AdapterView<?> adapterView) {
-
+                selectedBCnEmulationType = sBCnEmulationType.getSelectedItem() != null ? sBCnEmulationType.getSelectedItem().toString() : "compute";
             }
         });
 
         sBCnEmulationCache.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
             @Override
             public void onItemSelected(AdapterView<?> adapterView, View view, int i, long l) {
-                isBCnCacheEnabled = sBCnEmulationCache.getSelectedItem().toString();
+                isBCnCacheEnabled = sBCnEmulationCache.getSelectedItem() != null ? sBCnEmulationCache.getSelectedItem().toString() : "0";
             }
 
             @Override
             public void onNothingSelected(AdapterView<?> adapterView) {
-
+                isBCnCacheEnabled = sBCnEmulationCache.getSelectedItem() != null ? sBCnEmulationCache.getSelectedItem().toString() : "0";
             }
         });
 
