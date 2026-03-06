@@ -44,7 +44,6 @@ WinNative is built on the shoulders of giants. It includes and supports:
 
 We are committed to making WinNative the gold standard for mobile emulation.
 - [x] **Unified Interface:** Compose-based library with controller navigation.
-- [x] **Smart Power Management:** Dynamic refresh of power constraints during heavy emulation.
 - [ ] **Epic, GOG, Amazon Stores:** Expanding library support for multi-store integration.
 - [ ] **Direct Game Launching:** Deep-linking shortcuts directly from the Android home screen.
 - [ ] **Advanced DRM Handling:** Improved support for games requiring specialized file redirections.
