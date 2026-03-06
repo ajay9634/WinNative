@@ -334,11 +334,11 @@ public class SettingsFragment extends Fragment {
         Runnable updateSteamUI = () -> {
             boolean isLoggedIn = com.winlator.cmod.steam.service.SteamService.Companion.isLoggedIn();
             if (isLoggedIn) {
-                tvSteamStatus.setText("Status: Logged In as " + com.winlator.cmod.steam.utils.PrefManager.INSTANCE.getUsername());
-                btSteamLogin.setText("Logout from Steam");
+                tvSteamStatus.setText(getString(R.string.steam_status_logged_in, com.winlator.cmod.steam.utils.PrefManager.INSTANCE.getUsername()));
+                btSteamLogin.setText(R.string.steam_logout);
             } else {
-                tvSteamStatus.setText("Status: Not Logged In");
-                btSteamLogin.setText("Login to Steam");
+                tvSteamStatus.setText(R.string.steam_status_not_logged_in);
+                btSteamLogin.setText(R.string.steam_login);
             }
         };
         updateSteamUI.run();
@@ -347,7 +347,7 @@ public class SettingsFragment extends Fragment {
             if (com.winlator.cmod.steam.service.SteamService.Companion.isLoggedIn()) {
                 com.winlator.cmod.steam.service.SteamService.Companion.logOut();
                 updateSteamUI.run();
-                com.winlator.cmod.core.AppUtils.showToast(context, "Logged out of Steam");
+                com.winlator.cmod.core.AppUtils.showToast(context, R.string.steam_logged_out_toast);
             } else {
                 startActivity(new Intent(context, com.winlator.cmod.steam.SteamLoginActivity.class));
             }
@@ -355,10 +355,10 @@ public class SettingsFragment extends Fragment {
 
         btSteamLibrary.setOnClickListener(v -> {
             if (!com.winlator.cmod.steam.service.SteamService.Companion.isLoggedIn()) {
-                com.winlator.cmod.core.AppUtils.showToast(context, "Please login first");
+                com.winlator.cmod.core.AppUtils.showToast(context, R.string.steam_please_login_first);
                 return;
             }
-            com.winlator.cmod.core.AppUtils.showToast(context, "Steam Library Feature is active");
+            com.winlator.cmod.core.AppUtils.showToast(context, R.string.steam_library_feature_active);
         });
 
         view.findViewById(R.id.BTConfirm).setOnClickListener((v) -> {
@@ -529,7 +529,7 @@ public class SettingsFragment extends Fragment {
         Callback<String> onExportPreset = (String prefix) -> {
             final String presetId = Box64PresetManager.getSpinnerSelectedId(spinners.get(prefix));
             if (!presetId.startsWith(Box64Preset.CUSTOM)) {
-                AppUtils.showToast(context, "Cannot export this preset");
+                AppUtils.showToast(context, R.string.cannot_export_this_preset);
                 return;
             }
             getActivity().runOnUiThread(() ->  {
@@ -591,7 +591,7 @@ public class SettingsFragment extends Fragment {
         Callback<String> onExportPreset = (String prefix) -> {
             final String presetId = FEXCorePresetManager.getSpinnerSelectedId(sFEXCorePreset);
             if (!presetId.startsWith(FEXCorePreset.CUSTOM)) {
-                AppUtils.showToast(context, "Cannot export this preset");
+                AppUtils.showToast(context, R.string.cannot_export_this_preset);
                 return;
             }
             getActivity().runOnUiThread(() ->  {
