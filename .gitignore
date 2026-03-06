@@ -25,6 +25,7 @@ app/.cxx/
 # Python artifacts
 __pycache__/
 *.pyc
+/*.py
 
 # Local properties
 local.properties
