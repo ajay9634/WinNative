@@ -75,6 +75,8 @@ public class Container {
     private String emulator;
     private String executablePath = "";
     private String execArgs = "";
+    private boolean launchRealSteam;
+    private boolean useLegacyDRM;
 
     private ContainerManager containerManager;
 
@@ -437,6 +439,8 @@ public class Container {
             data.put("lc_all", lc_all);
             data.put("primaryController", primaryController);
             data.put("controllerMapping", controllerMapping);
+            data.put("launchRealSteam", launchRealSteam);
+            data.put("useLegacyDRM", useLegacyDRM);
             if (!WineInfo.isMainWineVersion(wineVersion)) data.put("wineVersion", wineVersion);
             FileUtils.writeString(getConfigFile(), data.toString());
         }
@@ -546,6 +550,12 @@ public class Container {
                 case "controllerMapping" :
                     controllerMapping = data.getString(key);
                     break;
+                case "launchRealSteam" :
+                    setLaunchRealSteam(data.getBoolean(key));
+                    break;
+                case "useLegacyDRM" :
+                    setUseLegacyDRM(data.getBoolean(key));
+                    break;
             }
         }
     }
@@ -634,6 +644,22 @@ public class Container {
             }
         }
         return false;
+    }
+
+    public boolean isLaunchRealSteam() {
+        return launchRealSteam;
+    }
+
+    public void setLaunchRealSteam(boolean launchRealSteam) {
+        this.launchRealSteam = launchRealSteam;
+    }
+
+    public boolean isUseLegacyDRM() {
+        return useLegacyDRM;
+    }
+
+    public void setUseLegacyDRM(boolean useLegacyDRM) {
+        this.useLegacyDRM = useLegacyDRM;
     }
 
 }

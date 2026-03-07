@@ -607,18 +607,17 @@ public class ContainerDetailFragment extends Fragment {
                     shortcut.putExtra("controllerMapping", controllerMapping);
                     
                     // Handle container_id override
-                    String wineVersionStr = sWineVersion.getSelectedItem() != null ? sWineVersion.getSelectedItem().toString() : WineInfo.MAIN_WINE_VERSION.identifier();
-                    if (wineVersionStr.startsWith("Container: ")) {
-                        String targetContainerName = wineVersionStr.replace("Container: ", "");
-                        for (Container c : manager.getContainers()) {
-                            if (c.getName().equals(targetContainerName)) {
-                                shortcut.putExtra("container_id", String.valueOf(c.id));
-                                break;
+                    if (sWineVersion.getSelectedItem() != null) {
+                        String selection = sWineVersion.getSelectedItem().toString();
+                        if (selection.startsWith("Container: ")) {
+                            String cname = selection.substring(11);
+                            for (Container c : manager.getContainers()) {
+                                if (c.getName().equals(cname)) {
+                                    shortcut.putExtra("container_id", String.valueOf(c.id));
+                                    break;
+                                }
                             }
                         }
-                    } else {
-                        String wineVersionId = WineInfo.fromIdentifier(context, contentsManager, wineVersionStr).identifier();
-                        shortcut.putExtra("wineVersion", wineVersionId);
                     }
                     
                     shortcut.saveData();
@@ -654,6 +653,92 @@ public class ContainerDetailFragment extends Fragment {
                     container.saveData();
                     saveWineRegistryKeys(view);
                     getActivity().onBackPressed();
+                } else if (createShortcutForAppId > 0) {
+                    JSONObject data = new JSONObject();
+                    data.put("screenSize", screenSize);
+                    data.put("envVars", envVars);
+                    data.put("cpuList", cpuList);
+                    data.put("cpuListWoW64", cpuListWoW64);
+                    data.put("graphicsDriver", graphicsDriver);
+                    data.put("graphicsDriverConfig", graphicsDriverConfig);
+                    data.put("dxwrapper", dxwrapper);
+                    data.put("dxwrapperConfig", dxwrapperConfig);
+                    data.put("audioDriver", audioDriver);
+                    data.put("emulator", emulator);
+                    data.put("wincomponents", wincomponents);
+                    data.put("drives", drives);
+                    data.put("showFPS", showFPS);
+                    data.put("fullscreenStretched", fullscreenStretched);
+                    data.put("inputType", finalInputType);
+                    data.put("startupSelection", startupSelection);
+                    data.put("box64Version", box64Version);
+                    data.put("box64Preset", box64Preset);
+                    data.put("fexcoreVersion", fexcoreVersion);
+                    data.put("fexcorePreset", fexcorePreset);
+                    data.put("desktopTheme", desktopTheme);
+                    String selectedWineStr = sWineVersion.getSelectedItem() != null ? sWineVersion.getSelectedItem().toString() : WineInfo.MAIN_WINE_VERSION.identifier();
+                    String finalWineVersion = WineInfo.fromIdentifier(context, contentsManager, selectedWineStr).identifier();
+                    data.put("wineVersion", finalWineVersion);
+                    data.put("midiSoundFont", midiSoundFont);
+                    data.put("lc_all", lc_all);
+                    data.put("primaryController", primaryController);
+                    data.put("controllerMapping", controllerMapping);
+
+                    // Start by picking the selected container
+                    Container targetContainer = null;
+                    if (sWineVersion.getSelectedItem() != null) {
+                        String selection = sWineVersion.getSelectedItem().toString();
+                        if (selection.startsWith("Container: ")) {
+                            String cname = selection.substring(11);
+                            for (Container c : manager.getContainers()) {
+                                if (c.getName().equals(cname)) {
+                                    targetContainer = c;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    // Fallback to searching for matching version if somehow they selected a raw version
+                    if (targetContainer == null) {
+                        for (Container c : manager.getContainers()) {
+                            if (c.getWineVersion().equals(finalWineVersion)) {
+                                targetContainer = c;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (targetContainer != null) {
+                        try {
+                            createShortcutOnContainer(targetContainer, data);
+                            getActivity().onBackPressed();
+                        } catch (Exception ex) {
+                            AppUtils.showToast(context, "Error creating shortcut: " + ex.getMessage());
+                        }
+                    } else {
+                        data.put("name", "Container-" + manager.getNextContainerId());
+                        preloaderDialog.show(R.string.creating_container);
+                        
+                        File imageFsRoot = new File(context.getFilesDir(), "imagefs");
+                        imageFs = ImageFs.find(imageFsRoot);
+
+                        manager.createContainerAsync(data, contentsManager, (newContainer) -> {
+                            if (newContainer != null) {
+                                try {
+                                    createShortcutOnContainer(newContainer, data);
+                                } catch (Exception ex) {
+                                    AppUtils.showToast(context, "Error creating shortcut: " + ex.getMessage());
+                                }
+                            } else {
+                                AppUtils.showToast(context, R.string.unable_to_install_system_files);
+                            }
+                            preloaderDialog.close();
+                            if (getActivity() != null) {
+                                getActivity().onBackPressed();
+                            }
+                        });
+                    }
                 } else {
                     // Create new container with specified properties
                     JSONObject data = new JSONObject();
@@ -1146,34 +1231,35 @@ public class ContainerDetailFragment extends Fragment {
 
 
         view.findViewById(R.id.LLWineVersion).setVisibility(View.VISIBLE);
-        String[] versions = getResources().getStringArray(R.array.wine_entries);
         ArrayList<String> wineVersions = new ArrayList<>();
-        wineVersions.addAll(Arrays.asList(versions));
-        for (ContentProfile profile : contentsManager.getProfiles(ContentProfile.ContentType.CONTENT_TYPE_WINE))
-            wineVersions.add(ContentsManager.getEntryName(profile));
-        for (ContentProfile profile : contentsManager.getProfiles(ContentProfile.ContentType.CONTENT_TYPE_PROTON))                                                      
-        	wineVersions.add(ContentsManager.getEntryName(profile));
         
-        if (isShortcutMode()) {
+        if (isShortcutMode() || createShortcutForAppId > 0) {
+            // When editing/creating game settings, ONLY list containers
             for (Container c : manager.getContainers()) {
                 wineVersions.add("Container: " + c.getName());
             }
+        } else {
+            String[] versions = getResources().getStringArray(R.array.wine_entries);
+            wineVersions.addAll(Arrays.asList(versions));
+            for (ContentProfile profile : contentsManager.getProfiles(ContentProfile.ContentType.CONTENT_TYPE_WINE))
+                wineVersions.add(ContentsManager.getEntryName(profile));
+            for (ContentProfile profile : contentsManager.getProfiles(ContentProfile.ContentType.CONTENT_TYPE_PROTON))                                                      
+                wineVersions.add(ContentsManager.getEntryName(profile));
         }
-        
-        sWineVersion.setAdapter(new ArrayAdapter<>(context, android.R.layout.simple_spinner_dropdown_item, wineVersions));
+
+        sWineVersion.setAdapter(new ArrayAdapter<>(context, android.R.layout.simple_spinner_dropdown_item, wineVersions.toArray(new String[0])));
         
         if (isShortcutMode()) {
-            String wineVersion = shortcut.getExtra("wineVersion", container != null ? container.getWineVersion() : WineInfo.MAIN_WINE_VERSION.identifier());
-            String containerIdOverride = shortcut.getExtra("container_id");
-            if (!containerIdOverride.isEmpty()) {
-                Container targetContainer = manager.getContainerById(Integer.parseInt(containerIdOverride));
-                if (targetContainer != null) {
-                    AppUtils.setSpinnerSelectionFromValue(sWineVersion, "Container: " + targetContainer.getName());
-                } else {
-                    AppUtils.setSpinnerSelectionFromValue(sWineVersion, wineVersion);
+            String containerIdStr = shortcut.getExtra("container_id");
+            if (!containerIdStr.isEmpty()) {
+                try {
+                    Container currentSC = manager.getContainerById(Integer.parseInt(containerIdStr));
+                    if (currentSC != null) {
+                        AppUtils.setSpinnerSelectionFromValue(sWineVersion, "Container: " + currentSC.getName());
+                    }
+                } catch (NumberFormatException e) {
+                    // Ignore parsing error
                 }
-            } else {
-                AppUtils.setSpinnerSelectionFromValue(sWineVersion, wineVersion);
             }
         } else if (isEditMode() && container != null) {
             AppUtils.setSpinnerSelectionFromValue(sWineVersion, container.getWineVersion());
@@ -1280,6 +1366,33 @@ public class ContainerDetailFragment extends Fragment {
             AppUtils.setSpinnerSelectionFromValue(spinner, (isArm64EC) ? DefaultVersion.WOWBOX64 : DefaultVersion.BOX64);
     }
 
+    private void createShortcutOnContainer(Container container, JSONObject data) throws Exception {
+        File desktopDir = container.getDesktopDir();
+        if (!desktopDir.exists()) desktopDir.mkdirs();
+
+        File shortcutFile = new File(desktopDir, createShortcutForAppName + ".desktop");
+        StringBuilder content = new StringBuilder();
+        content.append("[Desktop Entry]\n");
+        content.append("Type=Application\n");
+        content.append("Name=").append(createShortcutForAppName).append("\n");
+        content.append("Exec=wine \"C:\\\\Program Files (x86)\\\\Steam\\\\steamclient_loader_x64.exe\"\n");
+        content.append("Icon=steam_icon_").append(createShortcutForAppId).append("\n");
+        content.append("\n[Extra Data]\n");
+        content.append("game_source=STEAM\n");
+        content.append("app_id=").append(createShortcutForAppId).append("\n");
+        content.append("container_id=").append(container.id).append("\n");
+
+        // Write all additional overrides from data as extra data
+        java.util.Iterator<String> keys = data.keys();
+        while (keys.hasNext()) {
+            String key = keys.next();
+            if (!key.equals("name") && !key.equals("wineVersion")) {
+                content.append(key).append("=").append(data.getString(key)).append("\n");
+            }
+        }
+
+        FileUtils.writeString(shortcutFile, content.toString());
+    }
 }
 
 

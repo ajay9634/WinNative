@@ -46,6 +46,8 @@ import androidx.core.app.NotificationManagerCompat;
 import androidx.core.content.ContextCompat;
 import androidx.core.view.GravityCompat;
 import com.winlator.cmod.steam.utils.SteamUtils;
+import com.winlator.cmod.steam.service.SteamService;
+import com.winlator.cmod.steam.SteamClientManager;
 import androidx.drawerlayout.widget.DrawerLayout;
 import androidx.preference.PreferenceManager;
 
@@ -487,8 +489,23 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
                         return;
                     }
                     containerManager.activateContainer(container);
+                    Log.d("XServerDisplayActivity", "Container overridden to ID: " + newContainerId);
                 }
             }
+
+            // Re-mount A: drive for Steam game shortcuts on the active container
+            String gameSource = shortcut.getExtra("game_source");
+            if ("STEAM".equals(gameSource)) {
+                String appIdStr = shortcut.getExtra("app_id");
+                if (!appIdStr.isEmpty()) {
+                    String gameInstallPath = SteamService.getAppDirPath(Integer.parseInt(appIdStr));
+                    if (new File(gameInstallPath).exists()) {
+                        mountADriveOnContainer(container, gameInstallPath);
+                        Log.d("XServerDisplayActivity", "Mounted A: drive to " + gameInstallPath + " on container " + container.id);
+                    }
+                }
+            }
+        }
 
             graphicsDriver = shortcut.getExtra("graphicsDriver", container.getGraphicsDriver());
             graphicsDriverConfig = shortcut.getExtra("graphicsDriverConfig", container.getGraphicsDriverConfig());
@@ -1043,6 +1060,12 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
             extractWinComponentFiles();
             container.putExtra("wincomponents", wincomponents);
             containerDataChanged = true;
+        }
+
+        // Extract Steam client files if Steam mode is enabled on the container
+        if (container.isLaunchRealSteam()) {
+            Log.d("XServerDisplayActivity", "Steam mode enabled, extracting Steam client files...");
+            SteamClientManager.extractSteam(this);
         }
 
         String desktopTheme = shortcut != null ? shortcut.getExtra("desktopTheme", container.getDesktopTheme()) : container.getDesktopTheme();
@@ -1855,6 +1878,23 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
         }
    }
 
+    /**
+     * Mount the A: drive on a container, pointing to the given game install path.
+     * Removes any existing A: mapping first.
+     */
+    private void mountADriveOnContainer(Container c, String gamePath) {
+        String currentDrives = c.getDrives() != null ? c.getDrives() : Container.DEFAULT_DRIVES;
+        StringBuilder sb = new StringBuilder();
+        for (String[] drive : Container.drivesIterator(currentDrives)) {
+            if (!drive[0].equals("A")) {
+                sb.append(drive[0]).append(':').append(drive[1]);
+            }
+        }
+        sb.append("A:").append(gamePath);
+        c.setDrives(sb.toString());
+        c.saveData();
+    }
+
     private String getWineStartCommand() {
         // Initialize overrideEnvVars if not already done
         EnvVars envVars = getOverrideEnvVars();
@@ -1867,12 +1907,26 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
             if (gameSource.equals("STEAM")) {
                 int appId = Integer.parseInt(shortcut.getExtra("app_id"));
                 SteamUtils.writeColdClientIni(appId, container);
-                args = "\"C:\\\\Program Files (x86)\\\\Steam\\\\steamclient_loader_x64.exe\"";
+
+                // Use the actual shortcut exe path (from .desktop Exec field) 
+                // The shortcut.path contains the Windows path like A:\Games\game.exe
+                if (shortcut.path != null && !shortcut.path.isEmpty() 
+                        && !shortcut.path.contains("steamclient_loader") 
+                        && shortcut.path.contains("\\")) {
+                    // It's a Windows-style path from A: drive - quote it
+                    args = "\"" + shortcut.path + "\"";
+                } else {
+                    args = "\"C:\\\\Program Files (x86)\\\\Steam\\\\steamclient_loader_x64.exe\"";
+                }
             } else {
                 String execArgs = shortcut.getExtra("execArgs");
                 execArgs = !execArgs.isEmpty() ? " " + execArgs : "";
 
-                if (shortcut.path.endsWith(".lnk")) {
+                // Check if shortcut.path is a Windows-style path (e.g., A:\dir\game.exe)
+                if (shortcut.path.matches("^[A-Z]:\\\\.*")) {
+                    // Windows-style path: pass directly as a quoted argument
+                    args += "\"" + shortcut.path + "\"" + execArgs;
+                } else if (shortcut.path.endsWith(".lnk")) {
                     args += "\"" + shortcut.path + "\"" + execArgs;
                 } else {
                     String exeDir = FileUtils.getDirname(shortcut.path);

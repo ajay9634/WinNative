@@ -996,13 +996,36 @@ class UnifiedActivity : ComponentActivity() {
 
             // Find the first .exe in the game directory
             val exeFile = findGameExe(gameDir)
-            if (exeFile != null) {
-                container.executablePath = "A:\\${exeFile.relativeTo(gameDir).path.replace('/', '\\')}"
+            val execPath = if (exeFile != null) {
+                val dosPath = exeFile.relativeTo(gameDir).path.replace("/", "\\\\")
+                "wine \"A:\\\\${dosPath}\""
+            } else {
+                "wine \"C:\\\\Program Files (x86)\\\\Steam\\\\steamclient_loader_x64.exe\""
             }
+
+            // Generate a shortcut dynamically
+            val desktopDir = container.getDesktopDir()
+            if (!desktopDir.exists()) desktopDir.mkdirs()
+            val shortcutFile = java.io.File(desktopDir, "${app.name.replace("/", "_")}.desktop")
+            val content = java.lang.StringBuilder()
+            content.append("[Desktop Entry]\n")
+            content.append("Type=Application\n")
+            content.append("Name=${app.name}\n")
+            content.append("Exec=$execPath\n")
+            content.append("Icon=steam_icon_${app.id}\n")
+            content.append("\n[Extra Data]\n")
+            content.append("game_source=STEAM\n")
+            content.append("app_id=${app.id}\n")
+            content.append("container_id=${container.id}\n")
+
+            com.winlator.cmod.core.FileUtils.writeString(shortcutFile, content.toString())
+
             container.saveData()
 
             val intent = Intent(context, XServerDisplayActivity::class.java)
             intent.putExtra("container_id", container.id)
+            intent.putExtra("shortcut_path", shortcutFile.path)
+            intent.putExtra("shortcut_name", app.name)
             context.startActivity(intent)
         }
     }

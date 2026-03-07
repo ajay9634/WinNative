@@ -354,14 +354,18 @@ public class GuestProgramLauncherComponent extends EnvironmentComponent {
         }
         else {
             if (wineInfo.isArm64EC()) {
-                command = winePath + "/" + guestExecutable;
+                // HODLL is only for Arm64EC Wine with WoW64 translation DLLs
                 if (emulator.toLowerCase().equals("fexcore"))
                     envVars.put("HODLL", "libwow64fex.dll");
                 else
                     envVars.put("HODLL", "wowbox64.dll");
+
+                command = winePath + "/" + guestExecutable;
             }
-            else
+            else {
+                // x86_64 containers use Box64 binary translation directly, no HODLL
                 command = imageFs.getBinDir() + "/box64 " + guestExecutable;
+            }
         }
 
         // **Maybe remove this: Set execute permissions for box64 if necessary (Glibc/Proot artifact)
