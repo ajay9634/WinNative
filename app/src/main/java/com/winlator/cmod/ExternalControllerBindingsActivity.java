@@ -41,6 +41,8 @@ public class ExternalControllerBindingsActivity extends AppCompatActivity {
     private ExternalController controller;
     private RecyclerView recyclerView;
     private ControllerBindingsAdapter adapter;
+    private boolean l2WasPressed = false;
+    private boolean r2WasPressed = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -170,8 +172,19 @@ public class ExternalControllerBindingsActivity extends AppCompatActivity {
     @Override
     public boolean dispatchGenericMotionEvent(MotionEvent event) {
         if (event.getDeviceId() == controller.getDeviceId() && controller.updateStateFromMotionEvent(event)) {
-            if (controller.state.isPressed(ExternalController.IDX_BUTTON_L2)) updateControllerBinding(KeyEvent.KEYCODE_BUTTON_L2, Binding.NONE);
-            if (controller.state.isPressed(ExternalController.IDX_BUTTON_R2)) updateControllerBinding(KeyEvent.KEYCODE_BUTTON_R2, Binding.NONE);
+            boolean l2IsPressed = controller.state.isPressed(ExternalController.IDX_BUTTON_L2) || (controller.state.triggerL > 0.5f);
+            boolean r2IsPressed = controller.state.isPressed(ExternalController.IDX_BUTTON_R2) || (controller.state.triggerR > 0.5f);
+
+            if (l2IsPressed && !l2WasPressed) {
+                updateControllerBinding(KeyEvent.KEYCODE_BUTTON_L2, Binding.NONE);
+            }
+            if (r2IsPressed && !r2WasPressed) {
+                updateControllerBinding(KeyEvent.KEYCODE_BUTTON_R2, Binding.NONE);
+            }
+
+            l2WasPressed = l2IsPressed;
+            r2WasPressed = r2IsPressed;
+
             processJoystickInput();
             return true;
         }

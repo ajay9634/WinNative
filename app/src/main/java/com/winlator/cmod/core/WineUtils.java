@@ -212,4 +212,17 @@ public abstract class WineUtils {
             }
         }
     }
+
+    public static void setJoystickRegistryKeys(File userRegFile, boolean enable) {
+        try (WineRegistryEditor registryEditor = new WineRegistryEditor(userRegFile)) {
+            if (enable) {
+                registryEditor.removeKey("Software\\Wine\\DirectInput");
+            } else {
+                registryEditor.setStringValue("Software\\Wine\\DirectInput", "js0", "");
+                registryEditor.setStringValue("Software\\Wine\\DirectInput", "js1", "");
+                registryEditor.setStringValue("Software\\Wine\\DirectInput", "js2", "");
+                registryEditor.setStringValue("Software\\Wine\\DirectInput", "js3", "");
+            }
+        }
+    }
 }

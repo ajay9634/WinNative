@@ -41,6 +41,7 @@ public class ExternalController {
     private byte triggerType = TRIGGER_IS_AXIS;
     private final ArrayList<ExternalControllerBinding> controllerBindings = new ArrayList<>();
     public final GamepadState state = new GamepadState();
+    public final GamepadState remappedState = new GamepadState();
     private XServerDisplayActivity activity;
 
     private float deadzoneLeft = 0.1f;      // Default deadzone (10%)

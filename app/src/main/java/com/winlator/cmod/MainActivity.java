@@ -82,16 +82,10 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
             startActivity(intent);
         }
 
-        // Load the user's preferred theme
-        sharedPreferences = PreferenceManager.getDefaultSharedPreferences(this);
-        isDarkMode = sharedPreferences.getBoolean("dark_mode", false);
-
-        // Apply the theme based on the preference
-        if (isDarkMode) {
-            setTheme(R.style.AppTheme_Dark);
-        } else {
-            setTheme(R.style.AppTheme);
-        }
+        // Apply the dark theme unconditionally, as the new unified UI is fully dark-themed
+        // and content_dialog_background defaults to a dark gradient.
+        isDarkMode = true;
+        setTheme(R.style.AppTheme_Dark);
 
 
         setContentView(R.layout.main_activity);

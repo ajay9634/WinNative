@@ -528,6 +528,9 @@ class SteamService : Service(), IChallengeUrlChanged {
         @Volatile
         var keepAlive: Boolean = false
 
+        data class CloudSyncMessage(val appId: Int, val isUpload: Boolean, val message: String, val progress: Float)
+        val cloudSyncStatus = MutableStateFlow<CloudSyncMessage?>(null)
+
         @Volatile
         var isImporting: Boolean = false
 
@@ -2884,6 +2887,10 @@ class SteamService : Service(), IChallengeUrlChanged {
             }
 
             try {
+                val progressWrapper: (String, Float) -> Unit = { msg, prog ->
+                    cloudSyncStatus.value = CloudSyncMessage(appId, false, msg, prog)
+                    onProgress?.invoke(msg, prog)
+                }
                 var syncResult = PostSyncInfo(SyncResult.UnknownFail)
 
                 val maxAttempts = 3
@@ -2903,7 +2910,7 @@ class SteamService : Service(), IChallengeUrlChanged {
                                 preferredSave = preferredSave,
                                 parentScope = parentScope,
                                 prefixToPath = prefixToPath,
-                                onProgress = onProgress,
+                                onProgress = progressWrapper,
                             ).await()
 
                             postSyncInfo?.let { info ->
@@ -2954,6 +2961,7 @@ class SteamService : Service(), IChallengeUrlChanged {
 
                 return@async syncResult
             } finally {
+                cloudSyncStatus.value = null
                 releaseSync(appId)
             }
         }
@@ -3032,6 +3040,10 @@ class SteamService : Service(), IChallengeUrlChanged {
                 }
 
                 try {
+                    val progressWrapper: (String, Float) -> Unit = { msg, prog ->
+                        cloudSyncStatus.value = CloudSyncMessage(appId, true, msg, prog)
+                        onProgress?.invoke(msg, prog)
+                    }
                     val maxAttempts = 3
                     for (attempt in 1..maxAttempts) {
                         try {
@@ -3046,9 +3058,9 @@ class SteamService : Service(), IChallengeUrlChanged {
                                     clientId = clientId,
                                     steamInstance = steamInstance,
                                     steamCloud = steamCloud,
-                                    parentScope = this,
+                                    parentScope = this@async,
                                     prefixToPath = prefixToPath,
-                                    onProgress = onProgress,
+                                    onProgress = progressWrapper,
                                 ).await()
 
                                 steamCloud.signalAppExitSyncDone(
@@ -3069,7 +3081,33 @@ class SteamService : Service(), IChallengeUrlChanged {
                         }
                     }
                 } finally {
+                    cloudSyncStatus.value = null
                     releaseSync(appId)
+                }
+            }
+        }
+
+        interface CloudSyncCallback {
+            fun onProgress(message: String, progress: Float)
+            fun onComplete()
+        }
+
+        @JvmStatic
+        fun syncCloudOnExit(context: android.content.Context, appId: Int, callback: CloudSyncCallback) {
+            val accountId = userSteamId?.accountID ?: 0L
+            val prefixToPath: (String) -> String = { prefix ->
+                com.winlator.cmod.steam.enums.PathType.from(prefix).toAbsPath(context, appId, accountId)
+            }
+            CoroutineScope(Dispatchers.IO).launch {
+                closeApp(
+                    appId = appId,
+                    isOffline = false,
+                    prefixToPath = prefixToPath,
+                    onProgress = { msg, prog -> callback.onProgress(msg, prog) }
+                )
+                notifyRunningProcesses()
+                withContext(Dispatchers.Main) {
+                    callback.onComplete()
                 }
             }
         }

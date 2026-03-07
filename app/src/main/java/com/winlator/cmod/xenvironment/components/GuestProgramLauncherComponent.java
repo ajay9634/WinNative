@@ -272,9 +272,9 @@ public class GuestProgramLauncherComponent extends EnvironmentComponent {
         // Setting up essential environment variables for Wine
         envVars.put("HOME", imageFs.home_path);
         envVars.put("USER", ImageFs.USER);
-        envVars.put("TMPDIR", rootDir.getPath() + "/usr/tmp");
+        envVars.put("TMPDIR", wineInfo.isArm64EC() ? imageFs.getRootDir().getPath() + "/tmp" : rootDir.getPath() + "/usr/tmp");
         envVars.put("XDG_DATA_DIRS", rootDir.getPath() + "/usr/share");
-        envVars.put("LD_LIBRARY_PATH", rootDir.getPath() + "/usr/lib" + ":" + "/system/lib64");
+        envVars.put("LD_LIBRARY_PATH", rootDir.getPath() + "/usr/lib" + ":" + "/system/lib64" + (wineInfo.isArm64EC() ? ":" + context.getApplicationInfo().nativeLibraryDir : ""));
         envVars.put("XDG_CONFIG_DIRS", rootDir.getPath() + "/usr/etc/xdg");
         envVars.put("GST_PLUGIN_PATH", rootDir.getPath() + "/usr/lib/gstreamer-1.0");
         envVars.put("FONTCONFIG_PATH", rootDir.getPath() + "/usr/etc/fonts");
@@ -324,7 +324,16 @@ public class GuestProgramLauncherComponent extends EnvironmentComponent {
             ld_preload = imageFs.getLibDir() + "/libandroid-sysvshm.so";
         }
 
+        if (wineInfo.isArm64EC()) {
+            File hookImpl = new File(context.getApplicationInfo().nativeLibraryDir, "libhook_impl.so");
+            File fileRedirect = new File(context.getApplicationInfo().nativeLibraryDir, "libfile_redirect_hook.so");
+            if (hookImpl.exists() && fileRedirect.exists()) {
+                ld_preload += (ld_preload.isEmpty() ? "" : ":") + hookImpl.getAbsolutePath() + ":" + fileRedirect.getAbsolutePath();
+            }
+        }
+
         envVars.put("LD_PRELOAD", ld_preload);
+        envVars.put("BOX64_LD_PRELOAD", ld_preload);
 
         if (this.envVars.has("MANGOHUD")) {
             this.envVars.remove("MANGOHUD");

@@ -163,6 +163,7 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
     private final EnvVars envVars = new EnvVars();
     private boolean firstTimeBoot = false;
     private SharedPreferences preferences;
+    private boolean isMouseDisabled = false;
     private OnExtractFileListener onExtractFileListener;
     private WinHandler winHandler;
     private WineRequestHandler wineRequestHandler;
@@ -858,34 +859,34 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
         preloaderDialog.showOnUiThread(R.string.shutdown);
         
         // Sync Steam cloud saves before shutting down
-        syncSteamCloudOnExit();
-        
-        handler.postDelayed(new Runnable() {
-            @Override
-            public void run() {
-                savePlaytimeData(); // Save on destroy
-                handler.removeCallbacks(savePlaytimeRunnable);
-                if (midiHandler != null) midiHandler.stop();
-                // Unregister sensor listener to avoid memory leaks
-                if (sensorManager != null) sensorManager.unregisterListener(gyroListener);
-                if (environment != null) environment.stopEnvironmentComponents();
-                if (preloaderDialog != null && preloaderDialog.isShowing()) preloaderDialog.closeOnUiThread();
-                if (winHandler != null) winHandler.stop();
-                if (wineRequestHandler != null) wineRequestHandler.stop();
-                /* Gracefully terminate all running wine processes */
-                ProcessHelper.terminateAllWineProcesses();
-                /* Wait until all processes have gracefully terminated, forcefully killing them only after a certain amount of time */
-                long start = System.currentTimeMillis();
-                while (!ProcessHelper.listRunningWineProcesses().isEmpty()) {
-                    long elapsed = System.currentTimeMillis() - start;
-                    if (elapsed >= 1500) {
-                        break;
+        syncSteamCloudOnExit(() -> {
+            handler.postDelayed(new Runnable() {
+                @Override
+                public void run() {
+                    savePlaytimeData(); // Save on destroy
+                    handler.removeCallbacks(savePlaytimeRunnable);
+                    if (midiHandler != null) midiHandler.stop();
+                    // Unregister sensor listener to avoid memory leaks
+                    if (sensorManager != null) sensorManager.unregisterListener(gyroListener);
+                    if (environment != null) environment.stopEnvironmentComponents();
+                    if (preloaderDialog != null && preloaderDialog.isShowing()) preloaderDialog.closeOnUiThread();
+                    if (winHandler != null) winHandler.stop();
+                    if (wineRequestHandler != null) wineRequestHandler.stop();
+                    /* Gracefully terminate all running wine processes */
+                    ProcessHelper.terminateAllWineProcesses();
+                    /* Wait until all processes have gracefully terminated, forcefully killing them only after a certain amount of time */
+                    long start = System.currentTimeMillis();
+                    while (!ProcessHelper.listRunningWineProcesses().isEmpty()) {
+                        long elapsed = System.currentTimeMillis() - start;
+                        if (elapsed >= 1500) {
+                            break;
+                        }
                     }
+                    preloaderDialog.closeOnUiThread();
+                    AppUtils.restartApplication(getApplicationContext());
                 }
-                preloaderDialog.closeOnUiThread();
-                AppUtils.restartApplication(getApplicationContext());
-            }
-        }, 1000);
+            }, 1000);
+        });
     }
     
     /**
@@ -893,42 +894,42 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
      * Calls SteamService.closeApp() which runs SteamAutoCloud.syncUserFiles()
      * to upload modified save files to Steam Cloud.
      */
-    private void syncSteamCloudOnExit() {
-        if (shortcut == null) return;
+    private void syncSteamCloudOnExit(Runnable onComplete) {
+        if (shortcut == null) {
+            onComplete.run();
+            return;
+        }
         boolean isSteamGame = "STEAM".equals(shortcut.getExtra("game_source"));
-        if (!isSteamGame) return;
+        if (!isSteamGame) {
+            onComplete.run();
+            return;
+        }
         
         try {
             int appId = Integer.parseInt(shortcut.getExtra("app_id"));
             Log.d("XServerDisplayActivity", "Syncing Steam cloud saves for appId=" + appId);
             
-            // Run cloud sync on a background thread
-            new Thread(() -> {
-                try {
-                    Class<?> serviceClass = Class.forName("com.winlator.cmod.steam.service.SteamService");
-                    Class<?> companion = Class.forName("com.winlator.cmod.steam.service.SteamService$Companion");
-                    Object companionInstance = serviceClass.getField("Companion").get(null);
-                    
-                    // Check if logged in first
-                    java.lang.reflect.Method isLoggedInMethod = companion.getMethod("isLoggedIn");
-                    boolean isLoggedIn = (Boolean) isLoggedInMethod.invoke(companionInstance);
-                    
-                    if (!isLoggedIn) {
-                        Log.w("XServerDisplayActivity", "Not logged into Steam, skipping cloud sync");
-                        return;
-                    }
-                    
-                    // Call notifyRunningProcesses() to tell Steam we're done
-                    java.lang.reflect.Method notifyMethod = companion.getMethod("notifyRunningProcesses");
-                    notifyMethod.invoke(companionInstance);
-                    
-                    Log.d("XServerDisplayActivity", "Steam cloud sync initiated for appId=" + appId);
-                } catch (Exception e) {
-                    Log.w("XServerDisplayActivity", "Steam cloud sync failed: " + e.getMessage());
+            preloaderDialog.showOnUiThread("Cloud Sync Uploading...");
+            
+            com.winlator.cmod.steam.service.SteamService.Companion.CloudSyncCallback callback = new com.winlator.cmod.steam.service.SteamService.Companion.CloudSyncCallback() {
+                @Override
+                public void onProgress(String message, float progress) {
+                    runOnUiThread(() -> {
+                        int pct = (int)(progress * 100);
+                        preloaderDialog.showOnUiThread(message + " (" + pct + "%)");
+                    });
                 }
-            }).start();
+                @Override
+                public void onComplete() {
+                    Log.d("XServerDisplayActivity", "Steam cloud sync complete for appId=" + appId);
+                    onComplete.run();
+                }
+            };
+            
+            com.winlator.cmod.steam.service.SteamService.syncCloudOnExit(this, appId, callback);
         } catch (Exception e) {
             Log.w("XServerDisplayActivity", "Failed to initiate Steam cloud sync", e);
+            onComplete.run();
         }
     }
 
@@ -971,6 +972,11 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
                 isRelativeMouseMovement = !isRelativeMouseMovement;
                 drawerLayout.closeDrawers();
                 xServer.setRelativeMouseMovement(isRelativeMouseMovement);
+                break;
+            case R.id.main_menu_disable_mouse:
+                isMouseDisabled = !isMouseDisabled;
+                touchpadView.setMouseEnabled(!isMouseDisabled);
+                drawerLayout.closeDrawers();
                 break;
             case R.id.main_menu_toggle_fullscreen:
                 renderer.toggleFullscreen();
@@ -1164,6 +1170,13 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
                     Log.e("XServerDisplayActivity", "Failed to set up Steam environment", e);
                 }
             }
+        } else {
+            // Not a Steam game. Delete any lingering ColdClientLoader.ini so winhandler.exe doesn't get confused.
+            File iniFile = new File(container.getRootDir(), ".wine/drive_c/Program Files (x86)/Steam/ColdClientLoader.ini");
+            if (iniFile.exists()) {
+                iniFile.delete();
+                Log.d("XServerDisplayActivity", "Deleted lingering ColdClientLoader.ini for non-Steam game");
+            }
         }
 
         String desktopTheme = shortcut != null ? shortcut.getExtra("desktopTheme", container.getDesktopTheme()) : container.getDesktopTheme();
@@ -1175,6 +1188,12 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
 
         WineStartMenuCreator.create(this, container);
         WineUtils.createDosdevicesSymlinks(container);
+
+        boolean exclusiveXInput = Boolean.parseBoolean(container.getExtra("exclusiveXInput", "false"));
+        if (shortcut != null && !shortcut.getExtra("exclusiveXInput").isEmpty()) {
+            exclusiveXInput = shortcut.getExtra("exclusiveXInput").equals("1") || shortcut.getExtra("exclusiveXInput").equals("true");
+        }
+        WineUtils.setJoystickRegistryKeys(new File(container.getRootDir(), ".wine/user.reg"), exclusiveXInput);
 
         if (shortcut != null)
             startupSelection = shortcut.getExtra("startupSelection", String.valueOf(container.getStartupSelection()));
@@ -1355,6 +1374,7 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
         globalCursorSpeed = preferences.getFloat("cursor_speed", 1.0f);
         touchpadView = new TouchpadView(this, xServer, timeoutHandler, hideControlsRunnable);
         touchpadView.setSensitivity(globalCursorSpeed);
+        touchpadView.setMouseEnabled(!isMouseDisabled);
         touchpadView.setFourFingersTapCallback(() -> {
             if (!drawerLayout.isDrawerOpen(GravityCompat.START)) drawerLayout.openDrawer(GravityCompat.START);
         });
@@ -2021,7 +2041,32 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
         if (shortcut != null) {
             String gameSource = shortcut.getExtra("game_source");
             Log.d("XServerDisplayActivity", "getWineStartCommand: gameSource=" + gameSource + " shortcut.path=" + shortcut.path);
-            if (gameSource.equals("STEAM")) {
+            if (gameSource.equals("CUSTOM")) {
+                // Custom game: launch exe directly via A: drive, bypass all Steam/Goldberg
+                String customExe = shortcut.getExtra("custom_exe");
+                String customFolder = shortcut.getExtra("custom_game_folder");
+                if (!customExe.isEmpty() && !customFolder.isEmpty()) {
+                    try {
+                        // Build the A: drive relative path
+                        String relPath = new File(customExe).toPath()
+                                .toAbsolutePath().toString()
+                                .substring(new File(customFolder).toPath()
+                                        .toAbsolutePath().toString().length());
+                        String dosPath = "A:" + relPath.replace("/", "\\\\");
+                        args = "\"" + dosPath + "\"";
+                        Log.d("XServerDisplayActivity", "Custom game direct launch: " + args);
+                    } catch (Exception e) {
+                        // Fallback: use the exe filename on A: root
+                        String exeName = new File(customExe).getName();
+                        args = "\"A:\\\\" + exeName + "\"";
+                        Log.w("XServerDisplayActivity", "Custom game fallback launch: " + args);
+                    }
+                } else {
+                    // Last resort: try shortcut.path
+                    args = "\"" + shortcut.path.trim() + "\"";
+                    Log.w("XServerDisplayActivity", "Custom game using shortcut.path: " + args);
+                }
+            } else if (gameSource.equals("STEAM")) {
                 int appId = Integer.parseInt(shortcut.getExtra("app_id"));
                 Log.d("XServerDisplayActivity", "getWineStartCommand: STEAM appId=" + appId);
                 
@@ -2107,7 +2152,6 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
                 args += "\"wfm.exe\"";
             }
         }
-        // Construct the final command
         String command = "winhandler.exe " + args;
         Log.d("XServerDisplayActivity", "getWineStartCommand: FINAL command=" + command);
 

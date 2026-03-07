@@ -155,51 +155,51 @@ data class SteamApp(
         get() = "https://steamcdn-a.akamaihd.net/steamcommunity/public/images/apps/$id/$clientTgaHash.tga"
 
     // source: https://github.com/Nemirtingas/games-infos/blob/3915100198bac34553b3c862f9e295d277f5520a/steam_retriever/Program.cs#L589C43-L589C89
-    fun getSmallCapsuleUrl(language: Language = Language.english): String? {
-        return smallCapsule[language]?.let {
+    fun getSmallCapsuleUrl(language: Language = Language.english): String {
+        return smallCapsule[language]?.takeIf { it.isNotEmpty() }?.let {
             "https://cdn.akamai.steamstatic.com/steam/apps/$id/$it"
-        }
+        } ?: "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/$id/capsule_231x87.jpg"
     }
 
-    fun getHeaderImageUrl(language: Language = Language.english): String? {
-        return headerImage[language]?.let {
+    fun getHeaderImageUrl(language: Language = Language.english): String {
+        return headerImage[language]?.takeIf { it.isNotEmpty() }?.let {
             "https://cdn.akamai.steamstatic.com/steam/apps/$id/$it"
-        }
+        } ?: "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/$id/header.jpg"
     }
 
-    fun getCapsuleUrl(language: Language = Language.english, large: Boolean = false): String? {
+    fun getCapsuleUrl(language: Language = Language.english, large: Boolean = false): String {
         return if (large) {
-            libraryAssets.libraryCapsule.image2x[language]?.let {
+            libraryAssets.libraryCapsule.image2x[language]?.takeIf { it.isNotEmpty() }?.let {
                 "https://cdn.akamai.steamstatic.com/steam/apps/$id/$it"
-            }
+            } ?: "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/$id/library_600x900.jpg"
         } else {
-            libraryAssets.libraryCapsule.image[language]?.let {
+            libraryAssets.libraryCapsule.image[language]?.takeIf { it.isNotEmpty() }?.let {
                 "https://cdn.akamai.steamstatic.com/steam/apps/$id/$it"
-            }
+            } ?: "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/$id/library_600x900.jpg"
         }
     }
 
-    fun getHeroUrl(language: Language = Language.english, large: Boolean = false): String? {
+    fun getHeroUrl(language: Language = Language.english, large: Boolean = false): String {
         return if (large) {
-            libraryAssets.libraryHero.image2x[language]?.let {
+            libraryAssets.libraryHero.image2x[language]?.takeIf { it.isNotEmpty() }?.let {
                 "https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/$id/$it"
-            }
+            } ?: "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/$id/library_hero.jpg"
         } else {
-            libraryAssets.libraryHero.image[language]?.let {
+            libraryAssets.libraryHero.image[language]?.takeIf { it.isNotEmpty() }?.let {
                 "https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/$id/$it"
-            }
+            } ?: "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/$id/library_hero.jpg"
         }
     }
 
-    fun getLogoUrl(language: Language = Language.english, large: Boolean = false): String? {
+    fun getLogoUrl(language: Language = Language.english, large: Boolean = false): String {
         return if (large) {
-            libraryAssets.libraryLogo.image2x[language]?.let {
+            libraryAssets.libraryLogo.image2x[language]?.takeIf { it.isNotEmpty() }?.let {
                 "https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/$id/$it"
-            }
+            } ?: "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/$id/logo.png"
         } else {
-            libraryAssets.libraryLogo.image[language]?.let {
+            libraryAssets.libraryLogo.image[language]?.takeIf { it.isNotEmpty() }?.let {
                 "https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/$id/$it"
-            }
+            } ?: "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/$id/logo.png"
         }
     }
 }

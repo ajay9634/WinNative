@@ -64,6 +64,7 @@ import com.winlator.cmod.steam.data.DownloadInfo
 import com.winlator.cmod.steam.enums.DownloadPhase
 import com.winlator.cmod.db.PluviaDatabase
 import com.winlator.cmod.utils.StorageUtils
+import com.winlator.cmod.utils.PeIconExtractor
 import com.winlator.cmod.service.DownloadService
 import com.winlator.cmod.container.ContainerManager
 import com.winlator.cmod.container.Shortcut
@@ -135,6 +136,8 @@ class UnifiedActivity : ComponentActivity() {
     fun UnifiedHub() {
         var aioMode by remember { mutableStateOf(PrefManager.aioStoreMode) }
         val storeVisible = remember { mutableStateMapOf("steam" to true, "epic" to true, "gog" to true, "amazon" to true) }
+        var showAddCustomGame by remember { mutableStateOf(false) }
+        var libraryRefreshKey by remember { mutableIntStateOf(0) }
         val contentFilters = remember { mutableStateMapOf("games" to true, "dlc" to false, "applications" to false, "tools" to false) }
         val tabs = remember(aioMode, storeVisible.toMap()) { buildTabs(aioMode, storeVisible) }
         var selectedIdx by remember { mutableIntStateOf(0) }
@@ -146,6 +149,28 @@ class UnifiedActivity : ComponentActivity() {
             ?: remember { mutableStateOf(null) }
         val scope = rememberCoroutineScope()
 
+        val filteredSteamApps = remember(steamApps, contentFilters.toMap()) {
+            steamApps.filter { app ->
+                when (app.type) {
+                    com.winlator.cmod.steam.enums.AppType.game -> contentFilters["games"] == true
+                    com.winlator.cmod.steam.enums.AppType.demo -> contentFilters["games"] == true
+                    com.winlator.cmod.steam.enums.AppType.dlc -> contentFilters["dlc"] == true
+                    com.winlator.cmod.steam.enums.AppType.application -> contentFilters["applications"] == true
+                    com.winlator.cmod.steam.enums.AppType.tool -> contentFilters["tools"] == true
+                    com.winlator.cmod.steam.enums.AppType.config -> contentFilters["tools"] == true
+                    else -> contentFilters["games"] == true
+                }
+            }
+        }
+
+        // Ticker for real-time updates
+        LaunchedEffect(Unit) {
+            while(true) {
+                kotlinx.coroutines.delay(2000)
+                libraryRefreshKey++
+            }
+        }
+
         // Clamp selectedIdx if tabs shrink
         var globalSettingsApp by remember { mutableStateOf<SteamApp?>(null) }
         
@@ -155,15 +180,24 @@ class UnifiedActivity : ComponentActivity() {
         Scaffold(
             containerColor = BgDark,
             topBar = { TopBar(tabs, selectedIdx, { selectedIdx = it }, persona, context, scope) {
+                // Try Steam apps first, then fall back to custom game pseudo-app
                 globalSettingsApp = steamApps.find { it.id == selectedSteamAppId }
+                    ?: if (selectedSteamAppId < 0) {
+                        // Build a pseudo SteamApp for the custom game
+                        SteamApp(
+                            id = selectedSteamAppId,
+                            name = selectedSteamAppName,
+                            developer = "Custom"
+                        )
+                    } else null
             } }
         ) { padding ->
             Box(Modifier.padding(padding).fillMaxSize().background(BgDark)) {
                 val key = tabs.getOrNull(selectedIdx)?.key ?: "library"
                 when (key) {
-                    "library" -> LibraryCarousel(isLoggedIn, steamApps)
+                    "library" -> LibraryCarousel(isLoggedIn, filteredSteamApps, libraryRefreshKey)
                     "downloads" -> DownloadsTab()
-                    "steam", "store" -> SteamStoreTab(isLoggedIn, steamApps)
+                    "steam", "store" -> SteamStoreTab(isLoggedIn, filteredSteamApps)
                     "epic" -> StorePlaceholderTab("Epic Games")
                     "gog" -> StorePlaceholderTab("GOG")
                     "amazon" -> StorePlaceholderTab("Amazon Games")
@@ -186,6 +220,23 @@ class UnifiedActivity : ComponentActivity() {
                     }
                 }
 
+                // ── Bottom-right Add Custom Game button ──
+                if (key == "library") {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(16.dp)
+                            .size(52.dp)
+                            .shadow(10.dp, CircleShape, spotColor = Accent.copy(alpha = 0.4f))
+                            .clip(CircleShape)
+                            .background(Accent)
+                            .clickable { showAddCustomGame = true },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = "Add Custom Game", tint = Color.White, modifier = Modifier.size(28.dp))
+                    }
+                }
+
                 // ── Filter panel ──
                 Box(modifier = Modifier.align(Alignment.BottomStart)) {
                     FilterPanel(
@@ -197,6 +248,12 @@ class UnifiedActivity : ComponentActivity() {
                         contentFilters = contentFilters
                     )
                 }
+
+                // ── Cloud Sync Dialog ──
+                val cloudSyncStatus by SteamService.cloudSyncStatus.collectAsState()
+                if (cloudSyncStatus != null) {
+                    CloudSyncOverlay(cloudSyncStatus!!)
+                }
             }
         }
 
@@ -205,6 +262,10 @@ class UnifiedActivity : ComponentActivity() {
                 app = globalSettingsApp!!,
                 onDismissRequest = { globalSettingsApp = null }
             )
+        }
+
+        if (showAddCustomGame) {
+            AddCustomGameDialog(onDismiss = { showAddCustomGame = false; libraryRefreshKey++ })
         }
     }
 
@@ -316,7 +377,7 @@ class UnifiedActivity : ComponentActivity() {
                     }
                 } else {
                     IconButton(onClick = {
-                        if (selectedSteamAppId > 0) {
+                        if (selectedSteamAppId != 0) {
                             onGameSettingsClicked()
                         } else {
                             android.widget.Toast.makeText(context, "Select a game from your library first", android.widget.Toast.LENGTH_SHORT).show()
@@ -407,19 +468,43 @@ class UnifiedActivity : ComponentActivity() {
 
     // ─── PS5-style Library Carousel ───────────────────────────────────
     @Composable
-    fun LibraryCarousel(isLoggedIn: Boolean, steamApps: List<SteamApp>) {
-        if (!isLoggedIn) {
-            LoginRequiredScreen()
-            return
+    fun LibraryCarousel(isLoggedIn: Boolean, steamApps: List<SteamApp>, libraryRefreshKey: Int = 0) {
+        val context = LocalContext.current
+
+        // Load custom game shortcuts from containers
+        val customApps = remember(libraryRefreshKey) {
+            try {
+                val cm = ContainerManager(context)
+                cm.loadShortcuts()
+                    .filter { it.getExtra("game_source") == "CUSTOM" }
+                    .map { shortcut ->
+                        val displayName = shortcut.getExtra("custom_name", shortcut.name)
+                        val customId = -(displayName.hashCode().and(0x7FFFFFFF) + 1)
+                        SteamApp(
+                            id = customId,
+                            name = displayName,
+                            developer = "Custom",
+                            gameDir = shortcut.getExtra("custom_game_folder", "")
+                        )
+                    }
+            } catch (_: Exception) { emptyList() }
         }
 
-        val installedApps = remember(steamApps) {
+        val steamInstalled = remember(steamApps, libraryRefreshKey) {
             steamApps.filter { SteamService.isAppInstalled(it.id) }
         }
 
+        val installedApps = remember(steamInstalled, customApps) {
+            steamInstalled + customApps
+        }
+
         if (installedApps.isEmpty()) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                EmptyStateMessage("No games installed. Use a Store tab to find and install games.")
+            if (!isLoggedIn) {
+                LoginRequiredScreen()
+            } else {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    EmptyStateMessage("No games installed. Use a Store tab or the + button to add games.")
+                }
             }
             return
         }
@@ -534,30 +619,43 @@ class UnifiedActivity : ComponentActivity() {
                         if (selectedApp.developer.isNotEmpty()) {
                             Text(selectedApp.developer, style = MaterialTheme.typography.bodySmall, color = TextSecondary)
                         }
-                        val installed = SteamService.isAppInstalled(selectedApp.id)
+                        val isCustom = selectedApp.id < 0
+                        val installed = isCustom || SteamService.isAppInstalled(selectedApp.id)
                         Text(
                             if (installed) "● Installed" else "○ Not Installed",
                             style = MaterialTheme.typography.bodySmall,
                             color = if (installed) StatusOnline else TextSecondary
                         )
+                        if (isCustom) {
+                            Text("Custom", style = MaterialTheme.typography.bodySmall, color = Accent)
+                        }
                     }
                     Spacer(Modifier.height(16.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         val context = LocalContext.current
                         val containerManager = remember { ContainerManager(context) }
+                        val isCustom = selectedApp.id < 0
 
-                        if (SteamService.isAppInstalled(selectedApp.id)) {
+                        if (isCustom || SteamService.isAppInstalled(selectedApp.id)) {
                             Button(
-                                onClick = { launchSteamGame(context, containerManager, selectedApp) },
+                                onClick = {
+                                    if (isCustom) {
+                                        launchCustomGame(context, containerManager, selectedApp.name)
+                                    } else {
+                                        launchSteamGame(context, containerManager, selectedApp)
+                                    }
+                                },
                                 colors = ButtonDefaults.buttonColors(containerColor = Accent),
                                 shape = RoundedCornerShape(12.dp)
                             ) { Text("PLAY", fontWeight = FontWeight.Bold) }
                         }
 
-                        OutlinedButton(
-                            onClick = { selectedAppForSettings = selectedApp },
-                            shape = RoundedCornerShape(12.dp)
-                        ) { Text("Game Settings", color = TextSecondary) }
+                        if (!isCustom) {
+                            OutlinedButton(
+                                onClick = { selectedAppForSettings = selectedApp },
+                                shape = RoundedCornerShape(12.dp)
+                            ) { Text("Game Settings", color = TextSecondary) }
+                        }
                     }
                 }
             }
@@ -577,6 +675,7 @@ class UnifiedActivity : ComponentActivity() {
         val context = LocalContext.current
         var currentTab by remember { mutableStateOf("Menu") }
         val scope = rememberCoroutineScope()
+        val isCustom = app.id < 0
         
         // Export logic
         val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
@@ -587,8 +686,14 @@ class UnifiedActivity : ComponentActivity() {
                         val zos = java.util.zip.ZipOutputStream(java.io.BufferedOutputStream(os))
 
                         val containerManager = com.winlator.cmod.container.ContainerManager(context)
-                        val shortcut = containerManager.loadShortcuts().find {
-                            it.getExtra("app_id") == app.id.toString()
+                        val shortcut = if (isCustom) {
+                            containerManager.loadShortcuts().find {
+                                it.getExtra("game_source") == "CUSTOM" && (it.getExtra("custom_name") == app.name || it.name == app.name)
+                            }
+                        } else {
+                            containerManager.loadShortcuts().find {
+                                it.getExtra("app_id") == app.id.toString()
+                            }
                         }
                         
                         val dirsToZip = mutableListOf<java.io.File>()
@@ -665,8 +770,14 @@ class UnifiedActivity : ComponentActivity() {
                         val zis = java.util.zip.ZipInputStream(java.io.BufferedInputStream(`is`))
                         
                         val containerManager = com.winlator.cmod.container.ContainerManager(context)
-                        val shortcut = containerManager.loadShortcuts().find {
-                            it.getExtra("app_id") == app.id.toString()
+                        val shortcut = if (isCustom) {
+                            containerManager.loadShortcuts().find {
+                                it.getExtra("game_source") == "CUSTOM" && (it.getExtra("custom_name") == app.name || it.name == app.name)
+                            }
+                        } else {
+                            containerManager.loadShortcuts().find {
+                                it.getExtra("app_id") == app.id.toString()
+                            }
                         }
                         
                         val goldbergSavesParent = java.io.File(SteamService.getAppDirPath(app.id), "steam_settings")
@@ -731,11 +842,25 @@ class UnifiedActivity : ComponentActivity() {
                         "Menu" -> {
                             Button(
                                 onClick = {
-                                    val intent = Intent(context, MainActivity::class.java)
-                                    intent.putExtra("create_shortcut_for_app_id", app.id)
-                                    intent.putExtra("create_shortcut_for_app_name", app.name)
-                                    intent.putExtra("return_to_unified", true)
-                                    context.startActivity(intent)
+                                    if (isCustom) {
+                                        // For custom games, find the shortcut and navigate to its container settings
+                                        val cm = ContainerManager(context)
+                                        val sc = cm.loadShortcuts().find {
+                                            it.getExtra("game_source") == "CUSTOM" && (it.getExtra("custom_name") == app.name || it.name == app.name)
+                                        }
+                                        if (sc != null) {
+                                            val intent = Intent(context, MainActivity::class.java)
+                                            intent.putExtra("edit_shortcut_path", sc.file.absolutePath)
+                                            intent.putExtra("return_to_unified", true)
+                                            context.startActivity(intent)
+                                        }
+                                    } else {
+                                        val intent = Intent(context, MainActivity::class.java)
+                                        intent.putExtra("create_shortcut_for_app_id", app.id)
+                                        intent.putExtra("create_shortcut_for_app_name", app.name)
+                                        intent.putExtra("return_to_unified", true)
+                                        context.startActivity(intent)
+                                    }
                                     onDismissRequest()
                                 },
                                 modifier = Modifier.fillMaxWidth(),
@@ -753,7 +878,7 @@ class UnifiedActivity : ComponentActivity() {
                                 modifier = Modifier.fillMaxWidth(),
                                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF4444)),
                                 shape = RoundedCornerShape(8.dp)
-                            ) { Text("Uninstall Game") }
+                            ) { Text(if (isCustom) "Remove Game" else "Uninstall Game") }
                         }
                         "Saves" -> {
                             Text("Import or export your game saves for this game. For best results, ensure the game is closed.", color = TextSecondary, style = MaterialTheme.typography.bodyMedium)
@@ -775,7 +900,11 @@ class UnifiedActivity : ComponentActivity() {
                             }
                         }
                         "Uninstall" -> {
-                            Text("Are you sure you want to uninstall ${app.name}? This will permanently delete the game folder.", color = Color(0xFFFF6B6B))
+                            Text(
+                                if (isCustom) "Remove ${app.name} from your library? The game files on disk will not be deleted."
+                                else "Are you sure you want to uninstall ${app.name}? This will permanently delete the game folder.",
+                                color = Color(0xFFFF6B6B)
+                            )
                             Spacer(Modifier.height(16.dp))
                             var isUninstalling by remember { mutableStateOf(false) }
                             if (isUninstalling) {
@@ -787,18 +916,36 @@ class UnifiedActivity : ComponentActivity() {
                                     Button(
                                         onClick = {
                                             isUninstalling = true
-                                            SteamService.uninstallApp(app.id) { success ->
-                                                if (success) {
-                                                    android.widget.Toast.makeText(context, "${app.name} uninstalled.", android.widget.Toast.LENGTH_SHORT).show()
-                                                } else {
-                                                    android.widget.Toast.makeText(context, "Failed to uninstall.", android.widget.Toast.LENGTH_SHORT).show()
+                                            if (isCustom) {
+                                                // Remove custom game shortcut + icon
+                                                scope.launch(Dispatchers.IO) {
+                                                    val cm = ContainerManager(context)
+                                                    val sc = cm.loadShortcuts().find {
+                                                        it.getExtra("game_source") == "CUSTOM" && (it.getExtra("custom_name") == app.name || it.name == app.name)
+                                                    }
+                                                    sc?.file?.delete()
+                                                    // Remove saved icon
+                                                    val iconFile = java.io.File(context.filesDir, "custom_icons/${app.name.replace("/", "_")}.png")
+                                                    iconFile.delete()
+                                                    withContext(Dispatchers.Main) {
+                                                        android.widget.Toast.makeText(context, "${app.name} removed.", android.widget.Toast.LENGTH_SHORT).show()
+                                                        onDismissRequest()
+                                                    }
                                                 }
-                                                onDismissRequest()
+                                            } else {
+                                                SteamService.uninstallApp(app.id) { success ->
+                                                    if (success) {
+                                                        android.widget.Toast.makeText(context, "${app.name} uninstalled.", android.widget.Toast.LENGTH_SHORT).show()
+                                                    } else {
+                                                        android.widget.Toast.makeText(context, "Failed to uninstall.", android.widget.Toast.LENGTH_SHORT).show()
+                                                    }
+                                                    onDismissRequest()
+                                                }
                                             }
                                         },
                                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF4444)),
                                         shape = RoundedCornerShape(8.dp)
-                                    ) { Text("Confirm Uninstall") }
+                                    ) { Text(if (isCustom) "Confirm Remove" else "Confirm Uninstall") }
                                 }
                             }
                         }
@@ -812,6 +959,7 @@ class UnifiedActivity : ComponentActivity() {
     @Composable
     private fun GameCapsule(app: SteamApp, modifier: Modifier = Modifier) {
         val context = LocalContext.current
+        val isCustom = app.id < 0
 
         Column(
             modifier = modifier
@@ -819,35 +967,61 @@ class UnifiedActivity : ComponentActivity() {
                 .background(CardDark)
                 .pointerInput(app.id) {
                     detectTapGestures {
-                        if (SteamService.isAppInstalled(app.id)) {
-                            val containerManager = com.winlator.cmod.container.ContainerManager(context)
+                        val containerManager = com.winlator.cmod.container.ContainerManager(context)
+                        if (isCustom) {
+                            launchCustomGame(context, containerManager, app.name)
+                        } else if (SteamService.isAppInstalled(app.id)) {
                             launchSteamGame(context, containerManager, app)
                         }
                     }
                 }
         ) {
-            // Artwork — robust CDN fallback chain (most reliable URLs first)
-            val imageUrls = listOf(
-                app.getCapsuleUrl(),
-                app.getCapsuleUrl(large = true),
-                "https://cdn.cloudflare.steamstatic.com/steam/apps/${app.id}/library_600x900.jpg",
-                app.getHeroUrl(),
-                app.getHeaderImageUrl(),
-                "https://cdn.cloudflare.steamstatic.com/steam/apps/${app.id}/header.jpg",
-                "https://cdn.cloudflare.steamstatic.com/steam/apps/${app.id}/capsule_616x353.jpg",
-                "https://cdn.cloudflare.steamstatic.com/steam/apps/${app.id}/library_hero.jpg"
-            )
-            val imageUrl = imageUrls.firstOrNull { it != null } ?: imageUrls[2]!!
+            if (isCustom) {
+                // Custom game artwork — load extracted exe icon, fallback to gamepad
+                val safeName = app.name.replace("/", "_").replace("\\", "_")
+                val iconFile = java.io.File(context.filesDir, "custom_icons/$safeName.png")
+                if (iconFile.exists()) {
+                    AsyncImage(
+                        model = ImageRequest.Builder(context)
+                            .data(iconFile)
+                            .crossfade(300)
+                            .build(),
+                        contentDescription = app.name,
+                        modifier = Modifier.fillMaxWidth().height(175.dp),
+                        contentScale = ContentScale.Crop
+                    )
+                } else {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().height(175.dp).background(SurfaceDark),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Default.SportsEsports, contentDescription = app.name, tint = Accent.copy(alpha = 0.6f), modifier = Modifier.size(64.dp))
+                    }
+                }
+            } else {
+                // Artwork — robust CDN fallback chain
+                val imageUrls = listOf(
+                    app.getCapsuleUrl(),
+                    app.getCapsuleUrl(large = true),
+                    "https://cdn.cloudflare.steamstatic.com/steam/apps/${app.id}/library_600x900.jpg",
+                    app.getHeroUrl(),
+                    app.getHeaderImageUrl(),
+                    "https://cdn.cloudflare.steamstatic.com/steam/apps/${app.id}/header.jpg",
+                    "https://cdn.cloudflare.steamstatic.com/steam/apps/${app.id}/capsule_616x353.jpg",
+                    "https://cdn.cloudflare.steamstatic.com/steam/apps/${app.id}/library_hero.jpg"
+                )
+                val imageUrl = imageUrls.firstOrNull { it != null } ?: imageUrls[2]!!
 
-            AsyncImage(
-                model = ImageRequest.Builder(context)
-                    .data(imageUrl)
-                    .crossfade(300)
-                    .build(),
-                contentDescription = app.name,
-                modifier = Modifier.fillMaxWidth().height(175.dp),
-                contentScale = ContentScale.Crop
-            )
+                AsyncImage(
+                    model = ImageRequest.Builder(context)
+                        .data(imageUrl)
+                        .crossfade(300)
+                        .build(),
+                    contentDescription = app.name,
+                    modifier = Modifier.fillMaxWidth().height(175.dp),
+                    contentScale = ContentScale.Crop
+                )
+            }
 
             Text(
                 text = app.name,
@@ -976,7 +1150,13 @@ class UnifiedActivity : ComponentActivity() {
 
     @Composable
     fun DownloadItemDeck(id: String, info: DownloadInfo) {
-        val progress by remember(info) { mutableStateOf(info.getProgress()) }
+        var progress by remember { mutableFloatStateOf(info.getProgress()) }
+        
+        DisposableEffect(info) {
+            val listener: (Float) -> Unit = { progress = it }
+            info.addProgressListener(listener)
+            onDispose { info.removeProgressListener(listener) }
+        }
         val status by info.getStatusFlow().collectAsState()
         val statusMessage by info.getStatusMessageFlow().collectAsState()
         val appId = id.removePrefix("STEAM_").toIntOrNull() ?: 0
@@ -1204,76 +1384,89 @@ class UnifiedActivity : ComponentActivity() {
         }
 
         // Try to find an existing shortcut first
-        val shortcut = containerManager.loadShortcuts().find {
+        var shortcut = containerManager.loadShortcuts().find {
             it.getExtra("app_id") == app.id.toString()
         }
 
-        if (shortcut != null) {
-            // Existing shortcut: mount A: drive to game install path on its container
-            mountADrive(shortcut.container, gameInstallPath)
-            val intent = Intent(context, XServerDisplayActivity::class.java)
-            intent.putExtra("container_id", shortcut.container.id)
-            intent.putExtra("shortcut_path", shortcut.file.path)
-            intent.putExtra("shortcut_name", shortcut.name)
-            context.startActivity(intent)
-        } else {
-            // No shortcut — get or auto-create a container 
-            var containers = containerManager.getContainers()
-            var container = containers.firstOrNull()
-            if (container == null) {
-                // Auto-create a default container
-                try {
-                    val data = org.json.JSONObject()
-                    data.put("name", "Default")
-                    data.put("wineVersion", "proton-9.0-x86_64")
-                    val contentsManager = com.winlator.cmod.contents.ContentsManager(context)
-                    contentsManager.syncContents()
-                    container = containerManager.createContainer(data, contentsManager)
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
+            // Initiate Cloud Sync download
+            val prefixToPath: (String) -> String = { prefix ->
+                com.winlator.cmod.steam.enums.PathType.from(prefix).toAbsPath(context, app.id, SteamService.userSteamId?.accountID ?: 0L)
             }
+            SteamService.beginLaunchApp(
+                appId = app.id,
+                prefixToPath = prefixToPath,
+                ignorePendingOperations = true,
+                preferredSave = com.winlator.cmod.steam.enums.SaveLocation.None,
+            ).await()
 
-            if (container == null) {
-                android.widget.Toast.makeText(context, "Failed to create container. Open Game Settings first.", android.widget.Toast.LENGTH_SHORT).show()
-                return
-            }
-
-            mountADrive(container, gameInstallPath)
-
-            // Find the first .exe in the game directory
-            val exeFile = findGameExe(gameDir)
-            val execPath = if (exeFile != null) {
-                val dosPath = exeFile.relativeTo(gameDir).path.replace("/", "\\\\")
-                "wine \"A:\\\\${dosPath}\""
+            if (shortcut != null) {
+                // Existing shortcut: mount A: drive to game install path on its container
+                mountADrive(shortcut!!.container, gameInstallPath)
+                val intent = Intent(context, XServerDisplayActivity::class.java)
+                intent.putExtra("container_id", shortcut!!.container.id)
+                intent.putExtra("shortcut_path", shortcut!!.file.path)
+                intent.putExtra("shortcut_name", shortcut!!.name)
+                context.startActivity(intent)
             } else {
-                "wine \"C:\\\\Program Files (x86)\\\\Steam\\\\steamclient_loader_x64.exe\""
+                // No shortcut — get or auto-create a container 
+                var containers = containerManager.getContainers()
+                var container = containers.firstOrNull()
+                if (container == null) {
+                    // Auto-create a default container
+                    try {
+                        val data = org.json.JSONObject()
+                        data.put("name", "Default")
+                        data.put("wineVersion", "proton-9.0-x86_64")
+                        val contentsManager = com.winlator.cmod.contents.ContentsManager(context)
+                        contentsManager.syncContents()
+                        container = containerManager.createContainer(data, contentsManager)
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                }
+
+                if (container == null) {
+                    android.widget.Toast.makeText(context, "Failed to create container. Open Game Settings first.", android.widget.Toast.LENGTH_SHORT).show()
+                    return@launch
+                }
+
+                mountADrive(container, gameInstallPath)
+
+                // Find the first .exe in the game directory
+                val exeFile = findGameExe(gameDir)
+                val execPath = if (exeFile != null) {
+                    val dosPath = exeFile.relativeTo(gameDir).path.replace("/", "\\\\")
+                    "wine \"A:\\\\${dosPath}\""
+                } else {
+                    "wine \"C:\\\\Program Files (x86)\\\\Steam\\\\steamclient_loader_x64.exe\""
+                }
+
+                // Generate a shortcut dynamically
+                val desktopDir = container.getDesktopDir()
+                if (!desktopDir.exists()) desktopDir.mkdirs()
+                val shortcutFile = java.io.File(desktopDir, "${app.name.replace("/", "_")}.desktop")
+                val content = java.lang.StringBuilder()
+                content.append("[Desktop Entry]\n")
+                content.append("Type=Application\n")
+                content.append("Name=${app.name}\n")
+                content.append("Exec=$execPath\n")
+                content.append("Icon=steam_icon_${app.id}\n")
+                content.append("\n[Extra Data]\n")
+                content.append("game_source=STEAM\n")
+                content.append("app_id=${app.id}\n")
+                content.append("container_id=${container.id}\n")
+
+                com.winlator.cmod.core.FileUtils.writeString(shortcutFile, content.toString())
+
+                container.saveData()
+
+                val intent = Intent(context, XServerDisplayActivity::class.java)
+                intent.putExtra("container_id", container.id)
+                intent.putExtra("shortcut_path", shortcutFile.path)
+                intent.putExtra("shortcut_name", app.name)
+                context.startActivity(intent)
             }
-
-            // Generate a shortcut dynamically
-            val desktopDir = container.getDesktopDir()
-            if (!desktopDir.exists()) desktopDir.mkdirs()
-            val shortcutFile = java.io.File(desktopDir, "${app.name.replace("/", "_")}.desktop")
-            val content = java.lang.StringBuilder()
-            content.append("[Desktop Entry]\n")
-            content.append("Type=Application\n")
-            content.append("Name=${app.name}\n")
-            content.append("Exec=$execPath\n")
-            content.append("Icon=steam_icon_${app.id}\n")
-            content.append("\n[Extra Data]\n")
-            content.append("game_source=STEAM\n")
-            content.append("app_id=${app.id}\n")
-            content.append("container_id=${container.id}\n")
-
-            com.winlator.cmod.core.FileUtils.writeString(shortcutFile, content.toString())
-
-            container.saveData()
-
-            val intent = Intent(context, XServerDisplayActivity::class.java)
-            intent.putExtra("container_id", container.id)
-            intent.putExtra("shortcut_path", shortcutFile.path)
-            intent.putExtra("shortcut_name", app.name)
-            context.startActivity(intent)
         }
     }
 
@@ -1287,6 +1480,52 @@ class UnifiedActivity : ComponentActivity() {
         }
         sb.append("A:").append(gamePath)
         container.drives = sb.toString()
+    }
+
+    // ─── Launch custom game by shortcut name ──────────────────────────
+    private fun launchCustomGame(context: android.content.Context, containerManager: ContainerManager, gameName: String) {
+        val allShortcuts = containerManager.loadShortcuts()
+        val customShortcuts = allShortcuts.filter { it.getExtra("game_source") == "CUSTOM" }
+
+        // Try matching by custom_name extra first, then fall back to shortcut.name (filename)
+        var shortcut = customShortcuts.find { it.getExtra("custom_name") == gameName }
+            ?: customShortcuts.find { it.name == gameName }
+            ?: customShortcuts.find { it.name == gameName.replace("/", "_").replace("\\", "_") }
+
+        // If still not found, try matching by looking at the safe filename directly
+        if (shortcut == null) {
+            val safeName = gameName.replace("/", "_").replace("\\", "_")
+            for (container in containerManager.containers) {
+                val desktopFile = java.io.File(container.getDesktopDir(), "$safeName.desktop")
+                if (desktopFile.exists()) {
+                    shortcut = com.winlator.cmod.container.Shortcut(container, desktopFile)
+                    break
+                }
+            }
+        }
+
+        if (shortcut == null) {
+            android.widget.Toast.makeText(context, "Custom game shortcut not found: $gameName", android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        // Backfill custom_name if missing (legacy shortcuts)
+        if (shortcut.getExtra("custom_name").isEmpty()) {
+            shortcut.putExtra("custom_name", gameName)
+            shortcut.saveData()
+        }
+
+        // Ensure A: drive is mounted to the game folder
+        val gameFolder = shortcut.getExtra("custom_game_folder", "")
+        if (gameFolder.isNotEmpty()) {
+            mountADrive(shortcut.container, gameFolder)
+            shortcut.container.saveData()
+        }
+        val intent = Intent(context, XServerDisplayActivity::class.java)
+        intent.putExtra("container_id", shortcut.container.id)
+        intent.putExtra("shortcut_path", shortcut.file.path)
+        intent.putExtra("shortcut_name", gameName)
+        context.startActivity(intent)
     }
 
     private fun findGameExe(dir: java.io.File): java.io.File? {
@@ -1439,6 +1678,330 @@ class UnifiedActivity : ComponentActivity() {
             contentAlignment = Alignment.Center
         ) {
             Text(label, style = MaterialTheme.typography.labelMedium, color = textColor, fontWeight = FontWeight.Bold)
+        }
+    }
+
+    // ─── Smart game folder detection ──────────────────────────────────
+    private fun detectGameFolder(exePath: String): String {
+        val exeFile = java.io.File(exePath)
+        // Directories that are typically sub-folders inside a game, not the root
+        val subDirNames = setOf(
+            "bin", "binaries", "x64", "x86", "win64", "win32",
+            "bin64", "bin32", "game", "build", "release",
+            "shipping", "debug", "retail", "dist"
+        )
+        var dir = exeFile.parentFile ?: return exePath
+        // Walk up while the current dir name looks like a sub-directory
+        while (dir.parentFile != null) {
+            val name = dir.name.lowercase()
+            if (name in subDirNames) {
+                dir = dir.parentFile!!
+            } else {
+                break
+            }
+        }
+        return dir.absolutePath
+    }
+
+    // ─── Add Custom Game Dialog ───────────────────────────────────────
+    @Composable
+    private fun AddCustomGameDialog(onDismiss: () -> Unit) {
+        val context = LocalContext.current
+        val scope = rememberCoroutineScope()
+        var selectedExePath by remember { mutableStateOf<String?>(null) }
+        var gameName by remember { mutableStateOf("") }
+        var gameFolder by remember { mutableStateOf<String?>(null) }
+        var isAdding by remember { mutableStateOf(false) }
+
+        val exePickerLauncher = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.OpenDocument()
+        ) { uri ->
+            if (uri != null) {
+                // Resolve to a real file path
+                val path = getPathFromContentUri(context, uri)
+                if (path != null && path.lowercase().endsWith(".exe")) {
+                    selectedExePath = path
+                    gameFolder = detectGameFolder(path)
+                    // Auto-generate a game name from the folder name
+                    if (gameName.isBlank()) {
+                        gameName = java.io.File(gameFolder!!).name
+                            .replace("_", " ").replace("-", " ")
+                    }
+                } else {
+                    android.widget.Toast.makeText(context, "Please select a .exe file", android.widget.Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+
+        val folderPickerLauncher = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.OpenDocumentTree()
+        ) { uri -> uri?.let { gameFolder = getPathFromTreeUri(it) } }
+
+        Dialog(
+            onDismissRequest = onDismiss,
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth(0.85f)
+                    .heightIn(max = 320.dp),
+                shape = RoundedCornerShape(16.dp),
+                color = CardDark,
+                shadowElevation = 16.dp
+            ) {
+                Column(Modifier.padding(16.dp)) {
+                    // Header row with title + cancel/add buttons all in one line
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = null, tint = Accent, modifier = Modifier.size(22.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Add Custom Game", style = MaterialTheme.typography.titleMedium, color = TextPrimary, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.weight(1f))
+                        TextButton(onClick = onDismiss, modifier = Modifier.height(34.dp)) {
+                            Text("Cancel", color = TextSecondary, fontSize = 12.sp)
+                        }
+                        Spacer(Modifier.width(4.dp))
+                        Button(
+                            onClick = {
+                                if (selectedExePath == null || gameName.isBlank() || gameFolder == null) {
+                                    android.widget.Toast.makeText(context, "Select an exe and provide a name", android.widget.Toast.LENGTH_SHORT).show()
+                                    return@Button
+                                }
+                                isAdding = true
+                                scope.launch(Dispatchers.IO) {
+                                    addCustomGame(context, gameName.trim(), selectedExePath!!, gameFolder!!)
+                                    withContext(Dispatchers.Main) {
+                                        isAdding = false
+                                        android.widget.Toast.makeText(context, "$gameName added!", android.widget.Toast.LENGTH_SHORT).show()
+                                        onDismiss()
+                                    }
+                                }
+                            },
+                            enabled = selectedExePath != null && gameName.isNotBlank() && gameFolder != null && !isAdding,
+                            shape = RoundedCornerShape(8.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Accent),
+                            modifier = Modifier.height(34.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp)
+                        ) {
+                            if (isAdding) {
+                                CircularProgressIndicator(color = Color.White, modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                            } else {
+                                Text("Add", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.height(10.dp))
+
+                    // Scrollable content area
+                    Column(
+                        modifier = Modifier
+                            .weight(1f, fill = false)
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        // Pick EXE button
+                        Button(
+                            onClick = { exePickerLauncher.launch(arrayOf("application/octet-stream", "application/x-msdos-program", "application/x-msdownload", "*/*")) },
+                            modifier = Modifier.fillMaxWidth().height(40.dp),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = SurfaceDark),
+                            contentPadding = PaddingValues(horizontal = 12.dp)
+                        ) {
+                            Icon(Icons.Default.FolderOpen, contentDescription = null, tint = Accent, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                if (selectedExePath == null) "Select Executable (.exe)" else java.io.File(selectedExePath!!).name,
+                                color = if (selectedExePath == null) TextSecondary else TextPrimary,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 13.sp
+                            )
+                        }
+
+                        if (selectedExePath != null) {
+                            Spacer(Modifier.height(4.dp))
+                            Text(selectedExePath!!, color = TextSecondary.copy(alpha = 0.6f), fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+
+                            Spacer(Modifier.height(10.dp))
+
+                            // Game name text field — compact
+                            OutlinedTextField(
+                                value = gameName,
+                                onValueChange = { gameName = it },
+                                label = { Text("Game Name", fontSize = 12.sp) },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth().height(52.dp),
+                                textStyle = MaterialTheme.typography.bodyMedium.copy(color = TextPrimary),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = Accent,
+                                    unfocusedBorderColor = TextSecondary.copy(alpha = 0.3f),
+                                    focusedTextColor = TextPrimary,
+                                    unfocusedTextColor = TextPrimary,
+                                    cursorColor = Accent,
+                                    focusedLabelColor = Accent,
+                                    unfocusedLabelColor = TextSecondary
+                                ),
+                                shape = RoundedCornerShape(10.dp)
+                            )
+
+                            Spacer(Modifier.height(10.dp))
+
+                            // Game folder — single compact row
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(SurfaceDark)
+                                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.Folder, contentDescription = null, tint = StatusOnline.copy(alpha = 0.7f), modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Column(Modifier.weight(1f)) {
+                                    Text("Game Folder (A: drive)", color = TextSecondary, fontSize = 10.sp)
+                                    Text(
+                                        gameFolder ?: "Auto-detected",
+                                        color = if (gameFolder != null) TextPrimary else TextSecondary,
+                                        fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                                IconButton(onClick = { folderPickerLauncher.launch(null) }, modifier = Modifier.size(28.dp)) {
+                                    Icon(Icons.Default.Edit, contentDescription = "Change", tint = Accent, modifier = Modifier.size(14.dp))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ─── Resolve content URI to real file path ────────────────────────
+    private fun getPathFromContentUri(context: android.content.Context, uri: Uri): String? {
+        // Try DocumentsContract first
+        try {
+            if (DocumentsContract.isDocumentUri(context, uri)) {
+                val docId = DocumentsContract.getDocumentId(uri)
+                if (docId.startsWith("primary:")) {
+                    return "${android.os.Environment.getExternalStorageDirectory().path}/${docId.substringAfter(":")}"
+                } else if (docId.contains(":")) {
+                    val parts = docId.split(":", limit = 2)
+                    return if (parts.size == 2) "/storage/${parts[0]}/${parts[1]}" else null
+                }
+            }
+        } catch (_: Exception) {}
+        // Fallback: uri.path
+        return uri.path
+    }
+
+    // ─── Create custom game shortcut + container ──────────────────────
+    private fun addCustomGame(context: android.content.Context, name: String, exePath: String, gameFolderPath: String) {
+        val containerManager = ContainerManager(context)
+        var containers = containerManager.getContainers()
+        var container = containers.firstOrNull()
+        if (container == null) {
+            try {
+                val data = org.json.JSONObject()
+                data.put("name", "Default")
+                data.put("wineVersion", "proton-9.0-x86_64")
+                val contentsManager = com.winlator.cmod.contents.ContentsManager(context)
+                contentsManager.syncContents()
+                container = containerManager.createContainer(data, contentsManager)
+            } catch (e: Exception) { e.printStackTrace() }
+        }
+        if (container == null) return
+
+        // Mount the game folder as A: drive
+        mountADrive(container, gameFolderPath)
+
+        // Build the relative exe path from gameFolder
+        val exeFile = java.io.File(exePath)
+        val gameFolderFile = java.io.File(gameFolderPath)
+        val dosPath = try {
+            exeFile.relativeTo(gameFolderFile).path.replace("/", "\\\\")
+        } catch (_: Exception) {
+            exeFile.name
+        }
+        val execCmd = "wine \"A:\\\\$dosPath\""
+
+        // Write .desktop shortcut
+        val desktopDir = container.getDesktopDir()
+        if (!desktopDir.exists()) desktopDir.mkdirs()
+        val safeName = name.replace("/", "_").replace("\\", "_")
+        val shortcutFile = java.io.File(desktopDir, "$safeName.desktop")
+        val content = StringBuilder()
+        content.append("[Desktop Entry]\n")
+        content.append("Type=Application\n")
+        content.append("Name=$name\n")
+        content.append("Exec=$execCmd\n")
+        content.append("Icon=custom_game\n")
+        content.append("\n[Extra Data]\n")
+        content.append("game_source=CUSTOM\n")
+        content.append("custom_name=$name\n")
+        content.append("custom_exe=$exePath\n")
+        content.append("custom_game_folder=$gameFolderPath\n")
+        content.append("container_id=${container.id}\n")
+        com.winlator.cmod.core.FileUtils.writeString(shortcutFile, content.toString())
+        container.saveData()
+
+        // Extract exe icon and save as PNG for carousel artwork
+        try {
+            val iconOutFile = java.io.File(context.filesDir, "custom_icons/$safeName.png")
+            PeIconExtractor.extractAndSave(java.io.File(exePath), iconOutFile)
+        } catch (_: Exception) {}
+    }
+
+    // ─── Cloud Sync UI Overlay ───────────────────────────────────────
+    @Composable
+    fun CloudSyncOverlay(status: SteamService.Companion.CloudSyncMessage) {
+        Box(
+            modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.6f)).clickable(enabled=false, onClick={}),
+            contentAlignment = Alignment.Center
+        ) {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = CardDark,
+                modifier = Modifier.width(340.dp).padding(16.dp).border(2.dp, Accent.copy(alpha=0.5f), RoundedCornerShape(16.dp))
+            ) {
+                Column(
+                    modifier = Modifier.padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    val title = if (status.isUpload) "Cloud Sync Uploading..." else "Cloud Sync Downloading..."
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = TextPrimary,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(Modifier.height(16.dp))
+
+                    Text(
+                        text = status.message,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextSecondary,
+                        textAlign = TextAlign.Center,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(Modifier.height(16.dp))
+
+                    androidx.compose.material3.LinearProgressIndicator(
+                        progress = { status.progress.coerceIn(0f, 1f) },
+                        modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)),
+                        color = Accent,
+                        trackColor = SurfaceDark
+                    )
+
+                    Spacer(Modifier.height(8.dp))
+                    val pct = (status.progress * 100).toInt()
+                    Text(
+                        text = "$pct%",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = TextPrimary
+                    )
+                }
+            }
         }
     }
 }

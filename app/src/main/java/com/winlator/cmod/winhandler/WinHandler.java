@@ -594,6 +594,35 @@ public class WinHandler {
         }
     }
 
+    public void sendGamepadState(ExternalController controller) {
+        if (!initReceived || gamepadClients.isEmpty() || xinputDisabled || controller == null) return;
+        final ControlsProfile profile = activity.getInputControlsView().getProfile();
+        
+        for (final int port : gamepadClients) {
+            addAction(() -> {
+                sendData.rewind();
+                sendData.put(RequestCodes.GET_GAMEPAD_STATE);
+                sendData.put((byte)1);
+
+                sendData.putInt(controller.getDeviceId());
+                
+                GamepadState state;
+                if (profile != null && controller.getControllerBindingCount() > 0) {
+                    state = controller.remappedState;
+                } else {
+                    state = controller.state;
+                }
+
+                // Combine gyro input with thumbstick input
+                state.thumbRX = Mathf.clamp(state.thumbRX + gyroX, -1.0f, 1.0f);
+                state.thumbRY = Mathf.clamp(state.thumbRY + gyroY, -1.0f, 1.0f);
+
+                state.writeTo(sendData);
+                sendPacket(port);
+            });
+        }
+    }
+
     public void setXInputDisabled(boolean disabled) {
         this.xinputDisabled = disabled;
         this.xinputDisabledInitialized = true; // Mark as initialized
