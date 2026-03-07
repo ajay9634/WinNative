@@ -149,7 +149,29 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
         int createShortcutForAppId = intent.getIntExtra("create_shortcut_for_app_id", 0);
         if (createShortcutForAppId > 0) {
             String createShortcutForAppName = intent.getStringExtra("create_shortcut_for_app_name");
-            show(new ContainerDetailFragment(0, createShortcutForAppId, createShortcutForAppName), false);
+            
+            // Search for an existing shortcut with this app_id so we can edit it
+            // instead of creating a new one each time
+            Shortcut existingShortcut = null;
+            for (Shortcut s : containerManager.loadShortcuts()) {
+                String appIdExtra = s.getExtra("app_id");
+                if (appIdExtra != null && !appIdExtra.isEmpty()) {
+                    try {
+                        if (Integer.parseInt(appIdExtra) == createShortcutForAppId) {
+                            existingShortcut = s;
+                            break;
+                        }
+                    } catch (NumberFormatException ignored) {}
+                }
+            }
+            
+            if (existingShortcut != null) {
+                // Found existing shortcut — open in edit mode so saved settings are loaded
+                show(new ContainerDetailFragment(existingShortcut), false);
+            } else {
+                // No existing shortcut — open in create-new mode
+                show(new ContainerDetailFragment(0, createShortcutForAppId, createShortcutForAppName), false);
+            }
             return;
         }
 

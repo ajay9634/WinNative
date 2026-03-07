@@ -1196,7 +1196,9 @@ public class ContainerDetailFragment extends Fragment {
 
     private void loadWineVersionSpinner(final View view, Spinner sWineVersion, Spinner sBox64Version) {
         final Context context = getContext();
-        sWineVersion.setEnabled(!isEditMode());
+        // Allow changing container in shortcut/per-game settings mode; 
+        // only lock it when editing a container directly 
+        sWineVersion.setEnabled(!isEditMode() || isShortcutMode());
 //
         sWineVersion.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
             @Override

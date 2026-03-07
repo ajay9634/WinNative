@@ -451,6 +451,14 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
         firstTimeBoot = container.getExtra("appVersion").isEmpty();
 
         String wineVersion = container.getWineVersion();
+        // Override wine version from per-game shortcut settings if available
+        if (shortcut != null) {
+            String shortcutWineVersion = shortcut.getExtra("wineVersion");
+            if (shortcutWineVersion != null && !shortcutWineVersion.isEmpty()) {
+                Log.d("XServerDisplayActivity", "Overriding wine version from shortcut: " + shortcutWineVersion);
+                wineVersion = shortcutWineVersion;
+            }
+        }
         wineInfo = WineInfo.fromIdentifier(this, contentsManager, wineVersion);
 
         imageFs.setWinePath(wineInfo.path);
@@ -1906,15 +1914,31 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
                 int appId = Integer.parseInt(shortcut.getExtra("app_id"));
                 SteamUtils.writeColdClientIni(appId, container);
 
-                // Use the actual shortcut exe path (from .desktop Exec field) 
-                // The shortcut.path contains the Windows path like A:\Games\game.exe
+                // Find the actual game executable from the A: drive
+                // shortcut.path from .desktop Exec might be a Windows-style path or the default steamclient_loader
                 if (shortcut.path != null && !shortcut.path.isEmpty() 
                         && !shortcut.path.contains("steamclient_loader") 
                         && shortcut.path.contains("\\")) {
-                    // It's a Windows-style path from A: drive - quote it
+                    // It's a real Windows-style path from A: drive - use it
                     args = "\"" + shortcut.path + "\"";
                 } else {
-                    args = "\"C:\\\\Program Files (x86)\\\\Steam\\\\steamclient_loader_x64.exe\"";
+                    // Default steamclient_loader or empty — find real exe from game install path
+                    String gameInstallPath = SteamBridge.getAppDirPath(appId);
+                    File gameDir = new File(gameInstallPath);
+                    File exeFile = findGameExe(gameDir);
+                    if (exeFile != null) {
+                        // Build A:\relative\path\to\game.exe
+                        String relativePath = exeFile.getAbsolutePath()
+                                .substring(gameInstallPath.length())
+                                .replace("/", "\\\\");
+                        if (relativePath.startsWith("\\\\")) relativePath = relativePath.substring(2);
+                        args = "\"A:\\\\" + relativePath + "\"";
+                        Log.d("XServerDisplayActivity", "Found game exe: " + args);
+                    } else {
+                        // Last resort fallback — launch Steam file manager
+                        args = "\"wfm.exe\"";
+                        Log.w("XServerDisplayActivity", "No exe found for Steam app " + appId + ", launching file manager");
+                    }
                 }
             } else {
                 String execArgs = shortcut.getExtra("execArgs");
@@ -2064,6 +2088,55 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
 
     public void setScreenEffectProfile(String screenEffectProfile) {
         this.screenEffectProfile = screenEffectProfile;
+    }
+
+    /**
+     * Find the primary game executable in a directory.
+     * Prefers common launcher names, then falls back to the first suitable .exe.
+     */
+    private File findGameExe(File dir) {
+        if (dir == null || !dir.exists()) return null;
+        
+        String[] preferred = {"launcher.exe", "game.exe", "start.exe"};
+        
+        // First pass: look for preferred names (up to 3 levels deep)
+        File result = findExeRecursive(dir, preferred, 0, 3, true);
+        if (result != null) return result;
+        
+        // Second pass: any .exe excluding uninstallers, redist, setup
+        result = findExeRecursive(dir, null, 0, 3, false);
+        return result;
+    }
+    
+    private File findExeRecursive(File dir, String[] preferred, int depth, int maxDepth, boolean preferredOnly) {
+        if (depth > maxDepth || dir == null || !dir.exists()) return null;
+        
+        File[] files = dir.listFiles();
+        if (files == null) return null;
+        
+        File fallbackExe = null;
+        
+        for (File f : files) {
+            if (f.isDirectory()) {
+                File found = findExeRecursive(f, preferred, depth + 1, maxDepth, preferredOnly);
+                if (found != null) return found;
+            } else if (f.getName().toLowerCase().endsWith(".exe")) {
+                String name = f.getName().toLowerCase();
+                if (preferredOnly) {
+                    for (String p : preferred) {
+                        if (name.equals(p)) return f;
+                    }
+                } else {
+                    // Skip uninstallers, redistributables, setup
+                    if (!name.contains("unins") && !name.contains("redist") 
+                            && !name.contains("setup") && !name.contains("dotnet")
+                            && !name.contains("vcredist") && !name.contains("dxsetup")) {
+                        if (fallbackExe == null) fallbackExe = f;
+                    }
+                }
+            }
+        }
+        return fallbackExe;
     }
 
 }
