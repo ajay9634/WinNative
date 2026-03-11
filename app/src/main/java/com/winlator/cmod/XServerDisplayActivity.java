@@ -601,7 +601,11 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
             };
         }
 
-        preloaderDialog.show(R.string.starting_up);
+        if (shortcutName != null && !shortcutName.isEmpty()) {
+            preloaderDialog.show("Starting " + shortcutName + "...");
+        } else {
+            preloaderDialog.show("Starting Container...");
+        }
 
         inputControlsManager = new InputControlsManager(this);
         xServer = new XServer(new ScreenInfo(screenSize));
@@ -898,12 +902,17 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
         String playCountKey = shortcutName + "_play_count";
         int playCount = playtimePrefs.getInt(playCountKey, 0) + 1;
         editor.putInt(playCountKey, playCount);
+        editor.putLong(shortcutName + "_last_played", System.currentTimeMillis());
         editor.apply();
     }
 
     private void exit() {
         NotificationManagerCompat.from(this).cancel(NOTIFICATION_ID);
-        preloaderDialog.showOnUiThread(R.string.shutdown);
+        if (shortcutName != null && !shortcutName.isEmpty()) {
+            preloaderDialog.showOnUiThread("Closing " + shortcutName + "...");
+        } else {
+            preloaderDialog.showOnUiThread("Closing Container...");
+        }
         
         // Sync Steam cloud saves before shutting down
         syncSteamCloudOnExit(() -> {
@@ -1548,13 +1557,19 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
 
         final Spinner sProfile = dialog.findViewById(R.id.SProfile);
 
-        dialog.getWindow().setBackgroundDrawableResource(isDarkMode ? R.drawable.content_dialog_background_dark : R.drawable.content_dialog_background);
-        sProfile.setPopupBackgroundResource(isDarkMode ? R.drawable.content_dialog_background_dark : R.drawable.content_dialog_background);
+        dialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(0));
+        
+        float density = getResources().getDisplayMetrics().density;
+        com.winlator.cmod.widget.ChasingBorderDrawable animatedBorder = new com.winlator.cmod.widget.ChasingBorderDrawable(16f, 1.5f, density);
+        android.graphics.drawable.GradientDrawable solidBg = new android.graphics.drawable.GradientDrawable();
+        solidBg.setColor(android.graphics.Color.parseColor("#171A1C"));
+        solidBg.setCornerRadius(16f * density);
+        android.graphics.drawable.Drawable[] layers = {solidBg, animatedBorder};
+        android.graphics.drawable.LayerDrawable layerDrawable = new android.graphics.drawable.LayerDrawable(layers);
+        dialog.getContentView().setBackground(layerDrawable);
+        dialog.getContentView().setClipToOutline(true);
 
-        // Set text color for all TextViews in the dialog to white or black based on dark mode
-        int textColor = ContextCompat.getColor(this, isDarkMode ? R.color.white : R.color.black);
-        ViewGroup dialogViewGroup = (ViewGroup) dialog.getWindow().getDecorView().findViewById(android.R.id.content);
-        setTextColorForDialog(dialogViewGroup, textColor);
+        sProfile.setPopupBackgroundResource(isDarkMode ? R.drawable.content_dialog_background_dark : R.drawable.content_dialog_background);
 
         Runnable loadProfileSpinner = () -> {
             ArrayList<ControlsProfile> profiles = inputControlsManager.getProfiles(true);
@@ -1585,7 +1600,7 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
         final Runnable updateProfile = () -> {
             int position = sProfile.getSelectedItemPosition();
             if (position > 0) {
-                showInputControls(inputControlsManager.getProfiles().get(position - 1));
+                showInputControls(inputControlsManager.getProfiles(true).get(position - 1));
             }
             else hideInputControls();
         };
@@ -1594,7 +1609,7 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
             int position = sProfile.getSelectedItemPosition();
             Intent intent = new Intent(this, MainActivity.class);
             intent.putExtra("edit_input_controls", true);
-            intent.putExtra("selected_profile_id", position > 0 ? inputControlsManager.getProfiles().get(position - 1).id : 0);
+            intent.putExtra("selected_profile_id", position > 0 ? inputControlsManager.getProfiles(true).get(position - 1).id : 0);
             editInputControlsCallback = () -> {
                 hideInputControls();
                 inputControlsManager.loadProfiles(true);
@@ -1620,7 +1635,7 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
             }
             int position = sProfile.getSelectedItemPosition();
             if (position > 0) {
-                showInputControls(inputControlsManager.getProfiles().get(position - 1));
+                showInputControls(inputControlsManager.getProfiles(true).get(position - 1));
             }
             else hideInputControls();
             updateProfile.run();

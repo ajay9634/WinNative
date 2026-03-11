@@ -313,6 +313,18 @@ class UnifiedActivity : ComponentActivity() {
                     }
                 }
 
+                // ── Filter popup dismissal background ──
+                if (showFilter) {
+                    Box(modifier = Modifier
+                        .fillMaxSize()
+                        .clickable(
+                            interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                            indication = null,
+                            onClick = { showFilter = false }
+                        )
+                    )
+                }
+
                 // ── Filter panel ──
                 Box(modifier = Modifier.align(Alignment.BottomStart)) {
                     FilterPanel(
@@ -579,6 +591,7 @@ class UnifiedActivity : ComponentActivity() {
         }
 
         val installedApps = remember(steamInstalled, customApps, epicInstalled, libraryRefreshKey) {
+            val playtimePrefs = context.getSharedPreferences("playtime_stats", android.content.Context.MODE_PRIVATE)
             // Map Epic games to pseudo SteamApp objects with large ID offset
             val mappedEpic = epicInstalled.map { epic ->
                 SteamApp(
@@ -588,7 +601,17 @@ class UnifiedActivity : ComponentActivity() {
                     gameDir = epic.installPath
                 )
             }
-            steamInstalled + customApps + mappedEpic
+            val merged = steamInstalled + customApps + mappedEpic
+            merged.sortedByDescending { app ->
+                val searchKey = if (app.id >= 2000000000) {
+                    app.name
+                } else if (app.id < 0) {
+                    app.name
+                } else {
+                    app.name.replace("[^A-Za-z0-9 _-]".toRegex(), "")
+                }
+                playtimePrefs.getLong("${searchKey}_last_played", 0L)
+            }
         }
 
         if (installedApps.isEmpty()) {
