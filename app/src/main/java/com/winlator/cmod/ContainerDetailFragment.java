@@ -89,6 +89,14 @@ import java.util.UUID;
 public class ContainerDetailFragment extends Fragment {
 
     private static final String TAG = "FileUtils";
+    private static final String EXTRA_USE_CONTAINER_DEFAULTS = "use_container_defaults";
+    private static final String[] SHORTCUT_SETTING_OVERRIDE_KEYS = {
+            "screenSize", "envVars", "cpuList", "cpuListWoW64", "graphicsDriver", "graphicsDriverConfig",
+            "dxwrapper", "dxwrapperConfig", "audioDriver", "emulator", "emulator64", "wincomponents",
+            "drives", "showFPS", "fullscreenStretched", "inputType", "disableXinput",
+            "startupSelection", "box64Version", "box64Preset", "fexcoreVersion", "fexcorePreset",
+            "desktopTheme", "midiSoundFont", "lc_all", "primaryController", "controllerMapping"
+    };
 
     private ContainerManager manager;
     private ContentsManager contentsManager;
@@ -349,6 +357,173 @@ public class ContainerDetailFragment extends Fragment {
 
     private boolean isCreateShortcutMode() {
         return createShortcutForAppId > 0 || ("GOG".equals(createShortcutForSource) && !createShortcutForGogId.isEmpty());
+    }
+
+    private Container resolveSelectedShortcutContainer(Spinner sWineVersion) {
+        if (sWineVersion == null || sWineVersion.getSelectedItem() == null || manager == null) return null;
+        String selection = sWineVersion.getSelectedItem().toString();
+        if (!selection.startsWith("Container: ")) return null;
+        String containerName = selection.substring("Container: ".length());
+        for (Container item : manager.getContainers()) {
+            if (item.getName().equals(containerName)) {
+                return item;
+            }
+        }
+        return null;
+    }
+
+    private void clearShortcutSettingOverrides(Shortcut shortcut) {
+        if (shortcut == null) return;
+        for (String key : SHORTCUT_SETTING_OVERRIDE_KEYS) {
+            shortcut.putExtra(key, null);
+        }
+    }
+
+    private HashMap<String, String> collectShortcutSettingsSnapshot(
+            View view,
+            EnvVarsView envVarsView,
+            View vGraphicsDriverConfig,
+            View vDXWrapperConfig
+    ) {
+        Context context = getContext();
+        HashMap<String, String> snapshot = new HashMap<>();
+
+        String screenSize = getScreenSize(view);
+        String envVars = envVarsView.getEnvVars();
+
+        Spinner sGraphicsDriver = view.findViewById(R.id.SGraphicsDriver);
+        String graphicsDriver = sGraphicsDriver.getSelectedItem() != null
+                ? StringUtils.parseIdentifier(sGraphicsDriver.getSelectedItem())
+                : Container.DEFAULT_GRAPHICS_DRIVER;
+
+        String graphicsDriverConfig = vGraphicsDriverConfig.getTag() != null
+                ? vGraphicsDriverConfig.getTag().toString()
+                : "";
+        HashMap<String, String> graphicsConfig = GraphicsDriverConfigDialog.parseGraphicsDriverConfig(graphicsDriverConfig);
+        if (graphicsConfig.get("version") == null || graphicsConfig.get("version").isEmpty()) {
+            String defaultVersion;
+            try {
+                defaultVersion = GPUInformation.isDriverSupported(DefaultVersion.WRAPPER_ADRENO, context)
+                        ? DefaultVersion.WRAPPER_ADRENO
+                        : DefaultVersion.WRAPPER;
+            } catch (Throwable e) {
+                defaultVersion = DefaultVersion.WRAPPER;
+            }
+            graphicsConfig.put("version", defaultVersion);
+            graphicsDriverConfig = GraphicsDriverConfigDialog.toGraphicsDriverConfig(graphicsConfig);
+        }
+
+        Spinner sDXWrapper = view.findViewById(R.id.SDXWrapper);
+        String dxwrapper = sDXWrapper.getSelectedItem() != null
+                ? StringUtils.parseIdentifier(sDXWrapper.getSelectedItem())
+                : Container.DEFAULT_DXWRAPPER;
+        String dxwrapperConfig = vDXWrapperConfig.getTag() != null
+                ? vDXWrapperConfig.getTag().toString()
+                : "";
+
+        Spinner sAudioDriver = view.findViewById(R.id.SAudioDriver);
+        String audioDriver = sAudioDriver.getSelectedItem() != null
+                ? StringUtils.parseIdentifier(sAudioDriver.getSelectedItem())
+                : Container.DEFAULT_AUDIO_DRIVER;
+
+        Spinner sEmulator = view.findViewById(R.id.SEmulator);
+        String emulator = sEmulator.getSelectedItem() != null
+                ? StringUtils.parseIdentifier(sEmulator.getSelectedItem())
+                : Container.DEFAULT_EMULATOR;
+
+        Spinner sEmulator64 = view.findViewById(R.id.SEmulator64);
+        String emulator64 = sEmulator64.getSelectedItem() != null
+                ? StringUtils.parseIdentifier(sEmulator64.getSelectedItem())
+                : Container.DEFAULT_EMULATOR64;
+
+        String wincomponents = getWinComponents(view);
+        String drives = getDrives(view);
+
+        CompoundButton cbShowFPS = view.findViewById(R.id.CBShowFPS);
+        CompoundButton cbFullscreenStretched = view.findViewById(R.id.CBFullscreenStretched);
+
+        CPUListView cpuListView = view.findViewById(R.id.CPUListView);
+        CPUListView cpuListViewWoW64 = view.findViewById(R.id.CPUListViewWoW64);
+
+        Spinner sStartupSelection = view.findViewById(R.id.SStartupSelection);
+        byte startupSelection = (byte)Math.max(0, sStartupSelection.getSelectedItemPosition());
+
+        Spinner sBox64Version = view.findViewById(R.id.SBox64Version);
+        String box64Version = sBox64Version.getSelectedItem() != null
+                ? sBox64Version.getSelectedItem().toString()
+                : DefaultVersion.BOX64;
+
+        Spinner sBox64Preset = view.findViewById(R.id.SBox64Preset);
+        String box64Preset = Box64PresetManager.getSpinnerSelectedId(sBox64Preset);
+
+        Spinner sFEXCoreVersion = view.findViewById(R.id.SFEXCoreVersion);
+        String fexcoreVersion = sFEXCoreVersion.getSelectedItem() != null
+                ? sFEXCoreVersion.getSelectedItem().toString()
+                : DefaultVersion.FEXCORE;
+
+        Spinner sFEXCorePreset = view.findViewById(R.id.SFEXCorePreset);
+        String fexcorePreset = FEXCorePresetManager.getSpinnerSelectedId(sFEXCorePreset);
+
+        Spinner sMIDISoundFont = view.findViewById(R.id.SMIDISoundFont);
+        String midiSoundFont = (sMIDISoundFont.getSelectedItemPosition() <= 0 || sMIDISoundFont.getSelectedItem() == null)
+                ? ""
+                : sMIDISoundFont.getSelectedItem().toString();
+
+        EditText etLC_ALL = view.findViewById(R.id.ETlcall);
+        Spinner sPrimaryController = view.findViewById(R.id.SPrimaryController);
+
+        CompoundButton cbEnableXInput = view.findViewById(R.id.CBEnableXInput);
+        CompoundButton cbEnableDInput = view.findViewById(R.id.CBEnableDInput);
+        Spinner sDInputType = view.findViewById(R.id.SDInputType);
+        CompoundButton cbExclusiveInput = view.findViewById(R.id.CBExclusiveInput);
+        int inputType = 0;
+        inputType |= cbEnableXInput.isChecked() ? WinHandler.FLAG_INPUT_TYPE_XINPUT : 0;
+        inputType |= cbEnableDInput.isChecked() ? WinHandler.FLAG_INPUT_TYPE_DINPUT : 0;
+        inputType |= (sDInputType.getSelectedItemPosition() <= 0)
+                ? WinHandler.FLAG_DINPUT_MAPPER_STANDARD
+                : WinHandler.FLAG_DINPUT_MAPPER_XINPUT;
+
+        CompoundButton cbSdl2Toggle = view.findViewById(R.id.CBSdl2Toggle);
+        if (cbSdl2Toggle.isChecked()) {
+            for (String envVar : SDL2_ENV_VARS) {
+                if (!envVars.contains(envVar)) {
+                    envVars += (envVars.isEmpty() ? "" : " ") + envVar;
+                }
+            }
+        } else {
+            for (String envVar : SDL2_ENV_VARS) {
+                envVars = envVars.replace(envVar, "").replaceAll("\\s{2,}", " ").trim();
+            }
+        }
+
+        snapshot.put("screenSize", screenSize);
+        snapshot.put("envVars", envVars);
+        snapshot.put("cpuList", cpuListView.getCheckedCPUListAsString());
+        snapshot.put("cpuListWoW64", cpuListViewWoW64.getCheckedCPUListAsString());
+        snapshot.put("graphicsDriver", graphicsDriver);
+        snapshot.put("graphicsDriverConfig", graphicsDriverConfig);
+        snapshot.put("dxwrapper", dxwrapper);
+        snapshot.put("dxwrapperConfig", dxwrapperConfig);
+        snapshot.put("audioDriver", audioDriver);
+        snapshot.put("emulator", emulator);
+        snapshot.put("emulator64", emulator64);
+        snapshot.put("wincomponents", wincomponents);
+        snapshot.put("drives", drives);
+        snapshot.put("showFPS", cbShowFPS.isChecked() ? "1" : "0");
+        snapshot.put("fullscreenStretched", cbFullscreenStretched.isChecked() ? "1" : "0");
+        snapshot.put("inputType", String.valueOf(inputType));
+        snapshot.put("disableXinput", cbExclusiveInput != null && cbExclusiveInput.isChecked() ? "1" : "");
+        snapshot.put("startupSelection", String.valueOf(startupSelection));
+        snapshot.put("box64Version", box64Version);
+        snapshot.put("box64Preset", box64Preset);
+        snapshot.put("fexcoreVersion", fexcoreVersion);
+        snapshot.put("fexcorePreset", fexcorePreset);
+        snapshot.put("desktopTheme", getDesktopTheme(view));
+        snapshot.put("midiSoundFont", midiSoundFont);
+        snapshot.put("lc_all", etLC_ALL.getText().toString());
+        snapshot.put("primaryController", String.valueOf(Math.max(0, sPrimaryController.getSelectedItemPosition())));
+        snapshot.put("controllerMapping", getControllerMapping(view));
+        return snapshot;
     }
 
     @SuppressLint("SetTextI18n")
@@ -649,6 +824,9 @@ public class ContainerDetailFragment extends Fragment {
         final EnvVarsView envVarsView = createEnvVarsTab(view);
         createWinComponentsTab(view, isShortcutMode() ? shortcut.getExtra("wincomponents", container != null ? container.getWinComponents() : Container.DEFAULT_WINCOMPONENTS) : (isEditMode() && container != null ? container.getWinComponents() : Container.DEFAULT_WINCOMPONENTS));
         createDrivesTab(view);
+        final HashMap<String, String> initialShortcutSettings = isShortcutMode()
+                ? collectShortcutSettingsSnapshot(view, envVarsView, vGraphicsDriverConfig, vDXWrapperConfig)
+                : null;
 
         setupExpandableSections(view);
 
@@ -760,6 +938,15 @@ public class ContainerDetailFragment extends Fragment {
                 }
 
                 if (isShortcutMode()) {
+                    Container selectedShortcutContainer = resolveSelectedShortcutContainer(sWineVersion);
+                    boolean followsContainerDefaults = "1".equals(shortcut.getExtra(EXTRA_USE_CONTAINER_DEFAULTS, "0"));
+                    HashMap<String, String> currentShortcutSettings =
+                            collectShortcutSettingsSnapshot(view, envVarsView, vGraphicsDriverConfig, vDXWrapperConfig);
+                    boolean keepUsingContainerDefaults = followsContainerDefaults
+                            && selectedShortcutContainer != null
+                            && initialShortcutSettings != null
+                            && initialShortcutSettings.equals(currentShortcutSettings);
+
                     String gameSource = shortcut.getExtra("game_source", createShortcutForSource);
                     if (showLaunchExeSelector && selectedExePath[0] != null && !selectedExePath[0].isEmpty()) {
                         shortcut.putExtra("launch_exe_path", selectedExePath[0]);
@@ -769,62 +956,59 @@ public class ContainerDetailFragment extends Fragment {
                         rewriteShortcutExecLine(shortcut.file, buildExecCommandForSource(gameSource, shortcutAppId(), shortcutGogId(), shortcut, selectedExePath[0]));
                     }
 
-                    // Save overrides to Shortcut extraData
-                    shortcut.putExtra("screenSize", screenSize);
-                    shortcut.putExtra("envVars", envVars);
-                    shortcut.putExtra("cpuList", cpuList);
-                    shortcut.putExtra("cpuListWoW64", cpuListWoW64);
-                    shortcut.putExtra("graphicsDriver", graphicsDriver);
-                    shortcut.putExtra("graphicsDriverConfig", graphicsDriverConfig);
-                    shortcut.putExtra("dxwrapper", dxwrapper);
-                    shortcut.putExtra("dxwrapperConfig", dxwrapperConfig);
-                    shortcut.putExtra("audioDriver", audioDriver);
-                    shortcut.putExtra("emulator", emulator);
-                    shortcut.putExtra("emulator64", emulator64);
-                    shortcut.putExtra("wincomponents", wincomponents);
-                    shortcut.putExtra("drives", drives);
-                    shortcut.putExtra("showFPS", showFPS ? "1" : "0");
-                    shortcut.putExtra("fullscreenStretched", fullscreenStretched ? "1" : "0");
-                    shortcut.putExtra("inputType", String.valueOf(finalInputType));
-                    if (cbExclusiveInput != null) {
-                        shortcut.putExtra("disableXinput", cbExclusiveInput.isChecked() ? "1" : null);
-                    }
-                    shortcut.putExtra("startupSelection", String.valueOf(startupSelection));
-                    shortcut.putExtra("box64Version", box64Version);
-                    shortcut.putExtra("box64Preset", box64Preset);
-                    shortcut.putExtra("fexcoreVersion", fexcoreVersion);
-                    shortcut.putExtra("fexcorePreset", fexcorePreset);
-                    shortcut.putExtra("desktopTheme", desktopTheme);
-                    shortcut.putExtra("midiSoundFont", midiSoundFont);
-                    shortcut.putExtra("lc_all", lc_all);
-                    shortcut.putExtra("primaryController", String.valueOf(primaryController));
-                    shortcut.putExtra("controllerMapping", controllerMapping);
                     shortcut.putExtra("customLibraryIconPath", customLibraryIconPath.isEmpty() ? null : customLibraryIconPath);
                     shortcut.putExtra("customCoverArtPath", customLibraryIconPath.isEmpty() ? null : customLibraryIconPath);
+
+                    if (keepUsingContainerDefaults) {
+                        clearShortcutSettingOverrides(shortcut);
+                        shortcut.putExtra(EXTRA_USE_CONTAINER_DEFAULTS, "1");
+                    } else {
+                        shortcut.putExtra("screenSize", screenSize);
+                        shortcut.putExtra("envVars", envVars);
+                        shortcut.putExtra("cpuList", cpuList);
+                        shortcut.putExtra("cpuListWoW64", cpuListWoW64);
+                        shortcut.putExtra("graphicsDriver", graphicsDriver);
+                        shortcut.putExtra("graphicsDriverConfig", graphicsDriverConfig);
+                        shortcut.putExtra("dxwrapper", dxwrapper);
+                        shortcut.putExtra("dxwrapperConfig", dxwrapperConfig);
+                        shortcut.putExtra("audioDriver", audioDriver);
+                        shortcut.putExtra("emulator", emulator);
+                        shortcut.putExtra("emulator64", emulator64);
+                        shortcut.putExtra("wincomponents", wincomponents);
+                        shortcut.putExtra("drives", drives);
+                        shortcut.putExtra("showFPS", showFPS ? "1" : "0");
+                        shortcut.putExtra("fullscreenStretched", fullscreenStretched ? "1" : "0");
+                        shortcut.putExtra("inputType", String.valueOf(finalInputType));
+                        if (cbExclusiveInput != null) {
+                            shortcut.putExtra("disableXinput", cbExclusiveInput.isChecked() ? "1" : null);
+                        }
+                        shortcut.putExtra("startupSelection", String.valueOf(startupSelection));
+                        shortcut.putExtra("box64Version", box64Version);
+                        shortcut.putExtra("box64Preset", box64Preset);
+                        shortcut.putExtra("fexcoreVersion", fexcoreVersion);
+                        shortcut.putExtra("fexcorePreset", fexcorePreset);
+                        shortcut.putExtra("desktopTheme", desktopTheme);
+                        shortcut.putExtra("midiSoundFont", midiSoundFont);
+                        shortcut.putExtra("lc_all", lc_all);
+                        shortcut.putExtra("primaryController", String.valueOf(primaryController));
+                        shortcut.putExtra("controllerMapping", controllerMapping);
+                        shortcut.putExtra(EXTRA_USE_CONTAINER_DEFAULTS, "0");
+                    }
                     
                     // Handle container_id override
                     boolean saved = false;
-                    if (sWineVersion.getSelectedItem() != null) {
-                        String selection = sWineVersion.getSelectedItem().toString();
-                        if (selection.startsWith("Container: ")) {
-                            String cname = selection.substring(11);
-                            for (Container c : manager.getContainers()) {
-                                if (c.getName().equals(cname)) {
-                                    shortcut.putExtra("container_id", String.valueOf(c.id));
-                                    shortcut.putExtra("wineVersion", c.getWineVersion());
-                                    shortcut.saveData();
-                                    saved = true;
+                    if (selectedShortcutContainer != null) {
+                        shortcut.putExtra("container_id", String.valueOf(selectedShortcutContainer.id));
+                        shortcut.putExtra("wineVersion", selectedShortcutContainer.getWineVersion());
+                        shortcut.saveData();
+                        saved = true;
 
-                                    if (c.id != shortcut.container.id) {                                        // Move the file physically to the new container's desktop
-                                        java.io.File newDesktopDir = c.getDesktopDir();
-                                        if (!newDesktopDir.exists()) newDesktopDir.mkdirs();
-                                        java.io.File newShortcutFile = new java.io.File(newDesktopDir, shortcut.file.getName());
-                                        com.winlator.cmod.core.FileUtils.copy(shortcut.file, newShortcutFile);
-                                        shortcut.file.delete();
-                                    }
-                                    break;
-                                }
-                            }
+                        if (selectedShortcutContainer.id != shortcut.container.id) {
+                            java.io.File newDesktopDir = selectedShortcutContainer.getDesktopDir();
+                            if (!newDesktopDir.exists()) newDesktopDir.mkdirs();
+                            java.io.File newShortcutFile = new java.io.File(newDesktopDir, shortcut.file.getName());
+                            com.winlator.cmod.core.FileUtils.copy(shortcut.file, newShortcutFile);
+                            shortcut.file.delete();
                         }
                     }
                     if (!saved) {

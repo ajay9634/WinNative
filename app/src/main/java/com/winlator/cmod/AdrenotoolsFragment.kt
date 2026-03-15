@@ -448,6 +448,7 @@ class AdrenotoolsFragment : Fragment() {
                 return@launch
             }
 
+            SetupWizardActivity.recordInstalledDriver(requireContext(), installedDriverId)
             AppUtils.showToast(requireContext(), successMessage)
             refreshInstalledDrivers()
             submitRows()

@@ -1,6 +1,7 @@
 package com.winlator.cmod.steam.utils
 
 import android.content.Context
+import com.winlator.cmod.SetupWizardActivity
 import com.winlator.cmod.steam.service.SteamService
 import com.winlator.cmod.container.Container
 import com.winlator.cmod.container.ContainerManager
@@ -51,6 +52,7 @@ object ContainerUtils {
 
     fun getOrCreateContainer(context: Context, appId: String): Container {
         val containerManager = ContainerManager(context)
+        SetupWizardActivity.getPreferredGameContainer(context, containerManager)?.let { return it }
         val containerName = getContainerId(appId)
         
         // Try to find an existing container by name (e.g., STEAM_1234)

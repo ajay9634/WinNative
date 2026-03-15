@@ -4330,7 +4330,7 @@ class UnifiedActivity : ComponentActivity() {
             } else {
                 // No shortcut — get or auto-create a container 
                 var containers = containerManager.getContainers()
-                var container = containers.firstOrNull()
+                var container = SetupWizardActivity.getPreferredGameContainer(context, containerManager)
                 if (container == null) {
                     // Auto-create a default container using the preferred wine version
                     try {
@@ -4384,6 +4384,7 @@ class UnifiedActivity : ComponentActivity() {
                 content.append("app_id=${app.id}\n")
                 content.append("container_id=${container.id}\n")
                 content.append("game_install_path=${gameInstallPath}\n")
+                content.append("use_container_defaults=1\n")
 
                 com.winlator.cmod.core.FileUtils.writeString(shortcutFile, content.toString())
 
@@ -4477,7 +4478,7 @@ class UnifiedActivity : ComponentActivity() {
                 }
 
                 var containers = containerManager.getContainers()
-                var container = containers.firstOrNull()
+                var container = SetupWizardActivity.getPreferredGameContainer(context, containerManager)
 
                 if (container == null) {
                     try {
@@ -4513,6 +4514,7 @@ class UnifiedActivity : ComponentActivity() {
                 content.append("app_id=${app.id}\n")
                 content.append("container_id=${container.id}\n")
                 content.append("game_install_path=${gameInstallPath}\n")
+                content.append("use_container_defaults=1\n")
 
                 com.winlator.cmod.core.FileUtils.writeString(shortcutFile, content.toString())
 
@@ -4622,7 +4624,7 @@ class UnifiedActivity : ComponentActivity() {
                 }
             }
 
-            var container = containerManager.getContainers().firstOrNull()
+            var container = SetupWizardActivity.getPreferredGameContainer(context, containerManager)
             if (container == null) {
                 try {
                     val data = org.json.JSONObject()
@@ -4656,6 +4658,7 @@ class UnifiedActivity : ComponentActivity() {
             content.append("app_id=${gogPseudoId(app.id)}\n")
             content.append("container_id=${container.id}\n")
             content.append("game_install_path=${gameInstallPath}\n")
+            content.append("use_container_defaults=1\n")
 
             com.winlator.cmod.core.FileUtils.writeString(shortcutFile, content.toString())
             container.saveData()
@@ -4817,7 +4820,7 @@ class UnifiedActivity : ComponentActivity() {
         ModalDrawerSheet(
             drawerContainerColor = BgDark,
             drawerContentColor = TextPrimary,
-            modifier = Modifier.width(300.dp)
+            modifier = Modifier.width(324.dp)
         ) {
             Column(
                 Modifier
@@ -5074,10 +5077,16 @@ class UnifiedActivity : ComponentActivity() {
                     interactionSource = interactionSource,
                     indication = null
                 ) { onToggle(!checked) }
-                .padding(vertical = 10.dp, horizontal = 12.dp),
+                .padding(vertical = 10.dp, horizontal = 10.dp),
             contentAlignment = Alignment.Center
         ) {
-            Text(label, style = MaterialTheme.typography.labelMedium, color = textColor, fontWeight = FontWeight.Bold)
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium,
+                color = textColor,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1
+            )
         }
     }
 
@@ -5298,7 +5307,7 @@ class UnifiedActivity : ComponentActivity() {
     private fun addCustomGame(context: android.content.Context, name: String, exePath: String, gameFolderPath: String) {
         val containerManager = ContainerManager(context)
         var containers = containerManager.getContainers()
-        var container = containers.firstOrNull()
+        var container = SetupWizardActivity.getPreferredGameContainer(context, containerManager)
         if (container == null) {
             try {
                 val data = org.json.JSONObject()
@@ -5341,6 +5350,7 @@ class UnifiedActivity : ComponentActivity() {
         content.append("custom_exe=$exePath\n")
         content.append("custom_game_folder=$gameFolderPath\n")
         content.append("container_id=${container.id}\n")
+        content.append("use_container_defaults=1\n")
         com.winlator.cmod.core.FileUtils.writeString(shortcutFile, content.toString())
         container.saveData()
 

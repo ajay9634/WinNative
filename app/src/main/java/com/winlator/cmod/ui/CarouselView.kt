@@ -22,6 +22,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.filterNotNull
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
@@ -65,6 +66,7 @@ fun <T> CarouselView(
         val sidePadding = ((maxWidth - baseCardWidth) / 2).coerceAtLeast(0.dp)
         val flingBehavior = rememberSnapFlingBehavior(listState)
         val cardWidthPx = with(density) { baseCardWidth.toPx() }
+        val snapThresholdPx = cardWidthPx * 0.2f
 
         // Scroll to selected index when changed externally (d-pad / joystick)
         LaunchedEffect(selectedIndex) {
@@ -74,23 +76,36 @@ fun <T> CarouselView(
             }
         }
 
-        // Once scroll settles, report the actually centered item
+        // Report the centered item as soon as it gets close enough to center,
+        // then still reconcile once scrolling fully settles.
         LaunchedEffect(listState, items.size) {
-            snapshotFlow { listState.isScrollInProgress }
-                .distinctUntilChanged()
-                .collect { isScrolling ->
-                    if (!isScrolling && items.isNotEmpty()) {
-                        val visibleItems = listState.layoutInfo.visibleItemsInfo
-                        if (visibleItems.isEmpty()) return@collect
+            snapshotFlow {
+                if (items.isEmpty()) {
+                    null
+                } else {
+                    val visibleItems = listState.layoutInfo.visibleItemsInfo
+                    if (visibleItems.isEmpty()) {
+                        null
+                    } else {
                         val viewportCenter =
                             (listState.layoutInfo.viewportStartOffset + listState.layoutInfo.viewportEndOffset) / 2
                         val centeredItem = visibleItems.minByOrNull { item ->
                             abs((item.offset + item.size / 2) - viewportCenter)
-                        } ?: return@collect
-                        if (centeredItem.index != lastReportedIndex.intValue) {
-                            lastReportedIndex.intValue = centeredItem.index
-                            onCenteredIndexChanged(centeredItem.index)
                         }
+                        centeredItem?.let { item ->
+                            val distance = abs((item.offset + item.size / 2) - viewportCenter).toFloat()
+                            Triple(item.index, distance, listState.isScrollInProgress)
+                        }
+                    }
+                }
+            }
+                .filterNotNull()
+                .distinctUntilChanged()
+                .collect { (centeredIndex, distance, isScrolling) ->
+                    val shouldPromote = !isScrolling || distance <= snapThresholdPx
+                    if (shouldPromote && centeredIndex != lastReportedIndex.intValue) {
+                        lastReportedIndex.intValue = centeredIndex
+                        onCenteredIndexChanged(centeredIndex)
                     }
                 }
         }

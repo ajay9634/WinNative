@@ -147,6 +147,7 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
         
         View sidebar = findViewById(R.id.LLSidebar);
         boolean hideSidebar = intent.hasExtra("edit_shortcut_path") || 
+                            intent.hasExtra("edit_container_id") ||
                             intent.hasExtra("create_shortcut_for_app_id") || 
                             intent.hasExtra("create_shortcut_for_epic_id") ||
                             intent.hasExtra("create_shortcut_for_gog_id") ||
@@ -165,6 +166,12 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
                     return;
                 }
             }
+        }
+
+        int editContainerId = intent.getIntExtra("edit_container_id", 0);
+        if (editContainerId > 0) {
+            show(new ContainerDetailFragment(editContainerId));
+            return;
         }
 
         int createShortcutForAppId = intent.getIntExtra("create_shortcut_for_app_id", 0);
