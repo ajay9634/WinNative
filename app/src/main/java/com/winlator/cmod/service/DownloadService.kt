@@ -1,6 +1,8 @@
 package com.winlator.cmod.service
 
 import android.content.Context
+import android.os.Environment
+import android.os.storage.StorageManager
 import com.winlator.cmod.utils.StorageUtils
 import com.winlator.cmod.steam.service.SteamService
 import com.winlator.cmod.epic.service.EpicService
@@ -19,6 +21,8 @@ object DownloadService {
         private set
     var baseExternalAppDirPath: String = ""
         private set
+    var externalVolumePaths: List<String> = emptyList()
+        private set
     var appContext: Context? = null
         private set
 
@@ -28,6 +32,14 @@ object DownloadService {
         baseCacheDirPath = context.cacheDir.path
         val extFiles = context.getExternalFilesDir(null)
         baseExternalAppDirPath = extFiles?.parentFile?.path ?: ""
+
+        val storageManager = context.getSystemService(StorageManager::class.java)
+        externalVolumePaths = context.getExternalFilesDirs(null)
+            .filterNotNull()
+            .filter { Environment.getExternalStorageState(it) == Environment.MEDIA_MOUNTED }
+            .filter { storageManager?.getStorageVolume(it)?.isPrimary != true }
+            .map { it.absolutePath }
+            .distinct()
     }
 
     fun getAllDownloads(): List<Pair<String, com.winlator.cmod.steam.data.DownloadInfo>> {

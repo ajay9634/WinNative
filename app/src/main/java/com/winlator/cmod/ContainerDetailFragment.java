@@ -2109,6 +2109,10 @@ public class ContainerDetailFragment extends Fragment {
     }
 
     private String buildExecCommandForSource(String gameSource, int appId, @Nullable String gogId, @Nullable Shortcut shortcut, @Nullable String selectedExePath) {
+        if ("STEAM".equals(gameSource)) {
+            return "wine \"C:\\\\Program Files (x86)\\\\Steam\\\\steamclient_loader_x64.exe\"";
+        }
+
         if (selectedExePath == null || selectedExePath.isEmpty()) {
             if ("EPIC".equals(gameSource) || "GOG".equals(gameSource)) {
                 return "wine \"A:\\\\\"";

@@ -1180,7 +1180,8 @@ object EpicCloudSavesManager {
 
         // Get the container's Wine prefix path (similar to GOG)
         val appId = "EPIC_${game.id}"
-        val container = com.winlator.cmod.steam.utils.ContainerUtils.getOrCreateContainer(context, appId)
+        val container = com.winlator.cmod.steam.utils.ContainerUtils.getUsableContainerOrNull(context, appId)
+            ?: return null
         val winePrefix = File(container.rootDir, ".wine").absolutePath
         val user = "xuser"
 

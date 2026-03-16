@@ -127,7 +127,8 @@ enum class PathType {
             val imageFs = ImageFs.find(context)
             val user = ImageFs.USER
             val rootDir = if (appId != null) {
-                ContainerUtils.getOrCreateContainer(context, appId).rootDir.absolutePath
+                ContainerUtils.getUsableContainerOrNull(context, appId)?.rootDir?.absolutePath
+                    ?: imageFs.rootDir.absolutePath
             } else {
                 imageFs.rootDir.absolutePath
             }

@@ -10,6 +10,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -82,6 +83,7 @@ import com.winlator.cmod.xenvironment.ImageFsInstaller
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.util.concurrent.Executors
@@ -100,10 +102,9 @@ class SetupWizardActivity : FragmentActivity() {
         private const val KEY_DEFAULT_ARM64_SETTINGS_DONE = "default_arm64_settings_done"
         private const val KEY_LAST_DRIVER_ID = "last_driver_id"
         private const val KEY_LAST_CONTENT_PREFIX = "last_content_"
-
-        private const val GAME_NATIVE_TAG_API =
-            "https://api.github.com/repos/Xnick417x/Winlator-Bionic-Nightly-wcp/releases/tags/GameNative"
-        private const val GAME_NATIVE_MIN_UPDATED_AT = "2026-03-12T23:59:59Z"
+        private const val KEY_DEFAULT_JSON_CACHE = "default_json_cache"
+        private const val DEFAULT_JSON_URL =
+            "https://github.com/Xnick417x/Winlator-Bionic-Nightly-wcp/blob/main/default.json"
 
         @JvmStatic
         fun isSetupComplete(context: Context): Boolean {
@@ -120,11 +121,15 @@ class SetupWizardActivity : FragmentActivity() {
             context: Context,
             containerManager: ContainerManager
         ): Container? {
+            val contentsManager = ContentsManager(context)
+            contentsManager.syncContents()
             val preferredId = getDefaultX86ContainerId(context)
             if (preferredId > 0) {
-                containerManager.getContainerById(preferredId)?.let { return it }
+                containerManager.getContainerById(preferredId)?.let {
+                    if (isContainerUsable(contentsManager, it)) return it
+                }
             }
-            return containerManager.containers.firstOrNull()
+            return containerManager.containers.firstOrNull { isContainerUsable(contentsManager, it) }
         }
 
         @JvmStatic
@@ -163,8 +168,89 @@ class SetupWizardActivity : FragmentActivity() {
             prefs(context).edit().putString(key, contentVersionIdentifier(profile)).apply()
         }
 
+        @JvmStatic
+        fun isWineVersionInstalled(context: Context, wineVersion: String?): Boolean {
+            if (wineVersion.isNullOrBlank() || WineInfo.isMainWineVersion(wineVersion)) {
+                return true
+            }
+            val contentsManager = ContentsManager(context)
+            contentsManager.syncContents()
+            return isWineVersionInstalled(contentsManager, wineVersion)
+        }
+
+        @JvmStatic
+        fun isContainerUsable(context: Context, container: Container?): Boolean {
+            if (container == null) return false
+            val contentsManager = ContentsManager(context)
+            contentsManager.syncContents()
+            return isContainerUsable(contentsManager, container)
+        }
+
+        @JvmStatic
+        fun promptToInstallWineOrCreateContainer(context: Context, missingWineVersion: String? = null) {
+            val runtimeLabel = resolveWineVersionLabel(context, missingWineVersion)
+            val message = if (runtimeLabel.isNotBlank()) {
+                context.getString(R.string.error_wine_not_installed, runtimeLabel)
+            } else {
+                "Download a Wine/Proton package and create a container before launching games."
+            }
+            Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+
+            val intent = when {
+                !isSetupComplete(context) -> Intent(context, SetupWizardActivity::class.java)
+                hasInstalledRuntimes(context) -> Intent(context, MainActivity::class.java)
+                    .putExtra("selected_menu_item_id", R.id.main_menu_containers)
+                else -> Intent(context, MainActivity::class.java)
+                    .putExtra("selected_menu_item_id", R.id.main_menu_contents)
+            }
+            if (context !is Activity) {
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+        }
+
         private fun prefs(context: Context) =
             context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+        private fun isWineVersionInstalled(
+            contentsManager: ContentsManager,
+            wineVersion: String?
+        ): Boolean {
+            if (wineVersion.isNullOrBlank() || WineInfo.isMainWineVersion(wineVersion)) {
+                return true
+            }
+            return contentsManager.getProfileByEntryName(wineVersion)?.isInstalled == true
+        }
+
+        private fun isContainerUsable(contentsManager: ContentsManager, container: Container): Boolean {
+            return isWineVersionInstalled(contentsManager, container.wineVersion)
+        }
+
+        private fun hasInstalledRuntimes(context: Context): Boolean {
+            val contentsManager = ContentsManager(context)
+            contentsManager.syncContents()
+            return contentsManager.getProfiles(ContentProfile.ContentType.CONTENT_TYPE_WINE)
+                .orEmpty()
+                .any { it.isInstalled } ||
+                contentsManager.getProfiles(ContentProfile.ContentType.CONTENT_TYPE_PROTON)
+                    .orEmpty()
+                    .any { it.isInstalled }
+        }
+
+        private fun resolveWineVersionLabel(context: Context, wineVersion: String?): String {
+            if (wineVersion.isNullOrBlank()) return ""
+            val contentsManager = ContentsManager(context)
+            contentsManager.syncContents()
+            contentsManager.getProfileByEntryName(wineVersion)?.let { return it.verName }
+
+            val firstDash = wineVersion.indexOf('-')
+            val lastDash = wineVersion.lastIndexOf('-')
+            return if (firstDash >= 0 && lastDash > firstDash) {
+                wineVersion.substring(firstDash + 1, lastDash)
+            } else {
+                wineVersion
+            }
+        }
 
         val provider = GoogleFont.Provider(
             providerAuthority = "com.google.android.gms.fonts",
@@ -188,12 +274,20 @@ class SetupWizardActivity : FragmentActivity() {
         val nameHint: String
     )
 
-    private data class ProtonSpec(
+    private data class RuntimeSpec(
         val label: String,
-        val fixedUrl: String,
-        val fallbackPattern: Regex,
+        val archToken: String,
+        val fallbackType: ContentProfile.ContentType,
+        val fallbackUrl: String,
+        val fallbackNameHint: String,
         val containerDisplayName: (ContentProfile) -> String,
         val persistContainerId: (Context, Int) -> Unit
+    )
+
+    private data class RemotePackageSpec(
+        val type: ContentProfile.ContentType,
+        val verName: String,
+        val remoteUrl: String
     )
 
     private data class TransferState(
@@ -218,47 +312,63 @@ class SetupWizardActivity : FragmentActivity() {
             nameHint = "dxvk-2.7.1-gplasync"
         ),
         PackageSpec(
+            label = "DXVK 2.7.1 ARM64EC GPLAsync",
+            type = ContentProfile.ContentType.CONTENT_TYPE_DXVK,
+            url = "https://github.com/Xnick417x/Winlator-Bionic-Nightly-wcp/releases/download/Stable-Arm64ec-Dxvk/Dxvk-2.7.1-arm64ec-gplasync.wcp",
+            nameHint = "Dxvk-2.7.1-arm64ec-gplasync"
+        ),
+        PackageSpec(
             label = "VKD3D Proton 3.0b",
             type = ContentProfile.ContentType.CONTENT_TYPE_VKD3D,
             url = "https://github.com/Xnick417x/Winlator-Bionic-Nightly-wcp/releases/download/Stable-Vk3dk/Vk3dk-proton-3.0b.wcp",
-            nameHint = "vk3dk-proton-3.0b"
+            nameHint = "Vk3dk-proton-3.0b"
+        ),
+        PackageSpec(
+            label = "VKD3D ARM64EC 3.0b",
+            type = ContentProfile.ContentType.CONTENT_TYPE_VKD3D,
+            url = "https://github.com/Xnick417x/Winlator-Bionic-Nightly-wcp/releases/download/Stable-Arm64ec-Vk3dk/Vk3dk-arm64ec-3.0b.wcp",
+            nameHint = "Vk3dk-arm64ec-3.0b"
         ),
         PackageSpec(
             label = "FEX 2603",
             type = ContentProfile.ContentType.CONTENT_TYPE_FEXCORE,
             url = "https://github.com/Xnick417x/Winlator-Bionic-Nightly-wcp/releases/download/Stable-FEX/FEX-2603.wcp",
-            nameHint = "fex-2603"
+            nameHint = "FEX-2603"
         ),
         PackageSpec(
             label = "Box64 0.4.1 fix",
             type = ContentProfile.ContentType.CONTENT_TYPE_BOX64,
             url = "https://github.com/Xnick417x/Winlator-Bionic-Nightly-wcp/releases/download/Stable-Box64/Box64-0.4.1-fix.wcp",
-            nameHint = "box64-0.4.1-fix"
+            nameHint = "Box64-0.4.1-fix"
         ),
         PackageSpec(
             label = "Wowbox64 0.4.1",
             type = ContentProfile.ContentType.CONTENT_TYPE_WOWBOX64,
             url = "https://github.com/Xnick417x/Winlator-Bionic-Nightly-wcp/releases/download/Stable-wowbox64/Wowbox64-0.4.1.wcp",
-            nameHint = "wowbox64-0.4.1"
+            nameHint = "Wowbox64-0.4.1"
         )
     )
 
-    private val x86ProtonSpec = ProtonSpec(
+    private val x86ProtonSpec = RuntimeSpec(
         label = "Recommended x86-64",
-        fixedUrl = "https://github.com/Xnick417x/Winlator-Bionic-Nightly-wcp/releases/download/GameNative/proton-10.0-4-x86_64.ref4ik.wcp",
-        fallbackPattern = Regex("^proton-10\\.0-4-x86_64.*\\.wcp$", RegexOption.IGNORE_CASE),
+        archToken = "x86_64",
+        fallbackType = ContentProfile.ContentType.CONTENT_TYPE_WINE,
+        fallbackUrl = "https://github.com/Xnick417x/Winlator-Bionic-Nightly-wcp/releases/download/Wine/wine-9.20-x86_64.wcp",
+        fallbackNameHint = "wine-9.20-x86_64",
         containerDisplayName = { profile ->
-            "Proton ${extractProtonMajor(profile.verName)} x86-64"
+            "${runtimeDisplayLabel(profile)} x86-64"
         },
         persistContainerId = ::saveDefaultX86ContainerId
     )
 
-    private val arm64ProtonSpec = ProtonSpec(
+    private val arm64ProtonSpec = RuntimeSpec(
         label = "Recommended ARM64EC",
-        fixedUrl = "https://github.com/Xnick417x/Winlator-Bionic-Nightly-wcp/releases/download/GameNative/proton-BE-arm64ec-b310f0c.wcp",
-        fallbackPattern = Regex("^proton-BE-arm64ec.*\\.wcp$", RegexOption.IGNORE_CASE),
+        archToken = "arm64ec",
+        fallbackType = ContentProfile.ContentType.CONTENT_TYPE_PROTON,
+        fallbackUrl = "https://github.com/Xnick417x/Winlator-Bionic-Nightly-wcp/releases/download/GameNative/Proton-10-arm64ec-coffincolors.wcp",
+        fallbackNameHint = "Proton-10-arm64ec-coffincolors",
         containerDisplayName = { profile ->
-            "Proton ${extractProtonMajor(profile.verName)} BE Arm64EC"
+            "${runtimeDisplayLabel(profile)} ARM64EC"
         },
         persistContainerId = ::saveDefaultArm64ContainerId
     )
@@ -284,6 +394,7 @@ class SetupWizardActivity : FragmentActivity() {
     private val storeLoginState = mutableStateOf(StoreLoginState())
 
     private var pendingContainerSettingsType: String? = null
+    private var recommendedPackageRefreshInFlight = false
 
     private val manageStorageLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -406,6 +517,7 @@ class SetupWizardActivity : FragmentActivity() {
         notifGranted.value = notificationsEnabled
         if (notificationsEnabled) notifDenied.value = false
         refreshWizardState()
+        refreshRecommendedPackageCache()
     }
 
     private fun refreshWizardState() {
@@ -416,9 +528,10 @@ class SetupWizardActivity : FragmentActivity() {
         val contentsManager = ContentsManager(this)
         contentsManager.syncContents()
 
+        val referenceRecommendedComponents = getCachedRecommendedComponentSpecs().ifEmpty { recommendedComponents }
         recommendedComponentsDone.value =
             preferences.getBoolean(KEY_RECOMMENDED_COMPONENTS_DONE, false) ||
-                recommendedComponents.all { isPackageInstalled(contentsManager, it) }
+                referenceRecommendedComponents.all { isPackageInstalled(contentsManager, it) }
         if (recommendedComponentsDone.value) {
             preferences.edit().putBoolean(KEY_RECOMMENDED_COMPONENTS_DONE, true).apply()
         }
@@ -427,7 +540,9 @@ class SetupWizardActivity : FragmentActivity() {
 
         val containerManager = ContainerManager(this)
         val x86Container = containerManager.getContainerById(getDefaultX86ContainerId(this))
+            ?.takeIf { isContainerUsable(this, it) }
         val armContainer = containerManager.getContainerById(getDefaultArm64ContainerId(this))
+            ?.takeIf { isContainerUsable(this, it) }
 
         x86ProtonDone.value = x86Container != null
         arm64ProtonDone.value = armContainer != null
@@ -629,8 +744,9 @@ class SetupWizardActivity : FragmentActivity() {
             wizardError.value = null
             val success = withContext(Dispatchers.IO) {
                 try {
-                    recommendedComponents.forEachIndexed { index, spec ->
-                        val profile = downloadAndInstallPackage(spec, index, recommendedComponents.size)
+                    val specs = resolveRecommendedComponentSpecs()
+                    specs.forEachIndexed { index, spec ->
+                        val profile = downloadAndInstallPackage(spec, index, specs.size)
                         if (profile == null) return@withContext false
                     }
                     prefs(this@SetupWizardActivity).edit()
@@ -648,13 +764,14 @@ class SetupWizardActivity : FragmentActivity() {
         }
     }
 
-    private fun installRecommendedProton(spec: ProtonSpec) {
+    private fun installRecommendedProton(spec: RuntimeSpec) {
         if (transferState.value != null) return
 
         lifecycleScope.launch {
             wizardError.value = null
             val created = withContext(Dispatchers.IO) {
                 try {
+                    val resolvedSpec = resolveRecommendedRuntimeSpec(spec)
                     transferState.value = TransferState(
                         title = spec.label,
                         detail = "Preparing download",
@@ -662,24 +779,12 @@ class SetupWizardActivity : FragmentActivity() {
                         total = 2
                     )
 
-                    var resolvedUrl = spec.fixedUrl
-                    var downloaded = downloadFileToCache(
+                    val downloaded = downloadFileToCache(
                         label = spec.label,
-                        url = resolvedUrl,
+                        url = resolvedSpec.url,
                         currentIndex = 1,
                         total = 2
                     )
-                    if (downloaded == null) {
-                        resolvedUrl = resolveFallbackProtonUrl(spec)
-                        if (resolvedUrl != spec.fixedUrl) {
-                            downloaded = downloadFileToCache(
-                                label = spec.label,
-                                url = resolvedUrl,
-                                currentIndex = 1,
-                                total = 2
-                            )
-                        }
-                    }
                     if (downloaded == null) return@withContext null
 
                     transferState.value = TransferState(
@@ -690,7 +795,7 @@ class SetupWizardActivity : FragmentActivity() {
                         progress = null
                     )
 
-                    val profile = installDownloadedPackage(downloaded, resolvedUrl)
+                    val profile = installDownloadedPackage(downloaded, resolvedSpec.url)
                     downloaded.delete()
                     if (profile == null) return@withContext null
 
@@ -806,30 +911,124 @@ class SetupWizardActivity : FragmentActivity() {
         return if (failed) null else installedProfile
     }
 
-    private fun resolveFallbackProtonUrl(spec: ProtonSpec): String {
-        val json = Downloader.downloadString(GAME_NATIVE_TAG_API) ?: return spec.fixedUrl
-        val assets = JSONObject(json).optJSONArray("assets") ?: return spec.fixedUrl
-
-        var selectedUrl: String? = null
-        var selectedUpdatedAt = ""
-        for (i in 0 until assets.length()) {
-            val asset = assets.optJSONObject(i) ?: continue
-            val name = asset.optString("name")
-            val updatedAt = asset.optString("updated_at")
-            if (!spec.fallbackPattern.matches(name)) continue
-            if (updatedAt <= GAME_NATIVE_MIN_UPDATED_AT) continue
-            if (updatedAt > selectedUpdatedAt) {
-                selectedUpdatedAt = updatedAt
-                selectedUrl = asset.optString("browser_download_url")
+    private fun resolveRecommendedComponentSpecs(): List<PackageSpec> {
+        val componentTypes = setOf(
+            ContentProfile.ContentType.CONTENT_TYPE_DXVK,
+            ContentProfile.ContentType.CONTENT_TYPE_VKD3D,
+            ContentProfile.ContentType.CONTENT_TYPE_FEXCORE,
+            ContentProfile.ContentType.CONTENT_TYPE_BOX64,
+            ContentProfile.ContentType.CONTENT_TYPE_WOWBOX64
+        )
+        val remoteSpecs = fetchRecommendedPackages()
+            .filter { it.type in componentTypes }
+            .map {
+                PackageSpec(
+                    label = it.verName,
+                    type = it.type,
+                    url = it.remoteUrl,
+                    nameHint = it.verName
+                )
             }
+        return remoteSpecs.ifEmpty { recommendedComponents }
+    }
+
+    private fun resolveRecommendedRuntimeSpec(spec: RuntimeSpec): PackageSpec {
+        val resolved = fetchRecommendedPackages().firstOrNull {
+            (it.type == ContentProfile.ContentType.CONTENT_TYPE_WINE ||
+                it.type == ContentProfile.ContentType.CONTENT_TYPE_PROTON) &&
+                it.verName.contains(spec.archToken, ignoreCase = true)
         }
 
-        return selectedUrl ?: spec.fixedUrl
+        if (resolved != null) {
+            return PackageSpec(
+                label = spec.label,
+                type = resolved.type,
+                url = resolved.remoteUrl,
+                nameHint = resolved.verName
+            )
+        }
+
+        return PackageSpec(
+            label = spec.label,
+            type = spec.fallbackType,
+            url = spec.fallbackUrl,
+            nameHint = spec.fallbackNameHint
+        )
+    }
+
+    private fun fetchRecommendedPackages(): List<RemotePackageSpec> {
+        val json = Downloader.downloadString(resolveJsonDownloadUrl(DEFAULT_JSON_URL))
+        if (!json.isNullOrBlank()) {
+            prefs(this).edit().putString(KEY_DEFAULT_JSON_CACHE, json).apply()
+            return parseRecommendedPackages(json)
+        }
+        return getCachedRecommendedPackages()
+    }
+
+    private fun refreshRecommendedPackageCache() {
+        if (recommendedPackageRefreshInFlight) return
+
+        recommendedPackageRefreshInFlight = true
+        lifecycleScope.launch {
+            try {
+                withContext(Dispatchers.IO) {
+                    fetchRecommendedPackages()
+                }
+            } finally {
+                recommendedPackageRefreshInFlight = false
+                refreshWizardState()
+            }
+        }
+    }
+
+    private fun getCachedRecommendedPackages(): List<RemotePackageSpec> {
+        val cachedJson = prefs(this).getString(KEY_DEFAULT_JSON_CACHE, null)
+        return parseRecommendedPackages(cachedJson)
+    }
+
+    private fun getCachedRecommendedComponentSpecs(): List<PackageSpec> {
+        return getCachedRecommendedPackages()
+            .filter {
+                it.type != ContentProfile.ContentType.CONTENT_TYPE_WINE &&
+                    it.type != ContentProfile.ContentType.CONTENT_TYPE_PROTON
+            }
+            .map {
+                PackageSpec(
+                    label = it.verName,
+                    type = it.type,
+                    url = it.remoteUrl,
+                    nameHint = it.verName
+                )
+            }
+    }
+
+    private fun parseRecommendedPackages(json: String?): List<RemotePackageSpec> {
+        if (json.isNullOrBlank()) return emptyList()
+
+        return runCatching {
+            val entries = JSONArray(json)
+            buildList {
+                for (index in 0 until entries.length()) {
+                    val item = entries.optJSONObject(index) ?: continue
+                    val type = ContentProfile.ContentType.getTypeByName(item.optString("type")) ?: continue
+                    val verName = item.optString("verName")
+                    val remoteUrl = item.optString("remoteUrl")
+                    if (verName.isBlank() || remoteUrl.isBlank()) continue
+                    add(RemotePackageSpec(type, verName, remoteUrl))
+                }
+            }
+        }.getOrDefault(emptyList())
     }
 
     private fun ensureContainerForProfile(profile: ContentProfile, desiredName: String): Container {
         val containerManager = ContainerManager(this)
         containerManager.containers.firstOrNull { it.name == desiredName }?.let {
+            val resolvedWineVersion = ContentsManager.getEntryName(profile)
+            if (it.wineVersion != resolvedWineVersion) {
+                it.setWineVersion(resolvedWineVersion)
+                it.putExtra("wineprefixNeedsUpdate", "t")
+                it.saveData()
+            }
             applyRecommendedContainerDefaults(it)
             return it
         }
@@ -870,11 +1069,23 @@ class SetupWizardActivity : FragmentActivity() {
                     Container.DEFAULT_DXWRAPPERCONFIG,
                     ',',
                     "version",
-                    resolvePreferredContentVersion(contentsManager, ContentProfile.ContentType.CONTENT_TYPE_DXVK, DefaultVersion.DXVK)
+                    resolvePreferredContentVersion(
+                        contentsManager,
+                        ContentProfile.ContentType.CONTENT_TYPE_DXVK,
+                        DefaultVersion.DXVK,
+                        if (isArm64) Regex("arm64ec", RegexOption.IGNORE_CASE) else null,
+                        if (isArm64) null else Regex("arm64ec", RegexOption.IGNORE_CASE)
+                    )
                 ),
                 ',',
                 "vkd3dVersion",
-                resolvePreferredContentVersion(contentsManager, ContentProfile.ContentType.CONTENT_TYPE_VKD3D, DefaultVersion.VKD3D)
+                resolvePreferredContentVersion(
+                    contentsManager,
+                    ContentProfile.ContentType.CONTENT_TYPE_VKD3D,
+                    DefaultVersion.VKD3D,
+                    if (isArm64) Regex("arm64ec", RegexOption.IGNORE_CASE) else null,
+                    if (isArm64) null else Regex("arm64ec", RegexOption.IGNORE_CASE)
+                )
             )
         )
 
@@ -938,16 +1149,24 @@ class SetupWizardActivity : FragmentActivity() {
     private fun resolvePreferredContentVersion(
         manager: ContentsManager,
         type: ContentProfile.ContentType,
-        fallback: String
+        fallback: String,
+        includePattern: Regex? = null,
+        excludePattern: Regex? = null
     ): String {
         val preferenceKey = "last_content_${type.toString().lowercase()}"
         val preferred = prefs(this).getString(preferenceKey, "") ?: ""
         val installedProfiles = manager.getProfiles(type).orEmpty().filter { it.isInstalled }
-        if (preferred.isNotBlank() && installedProfiles.any { contentVersionIdentifier(it) == preferred }) {
+        val matchingProfiles = installedProfiles.filter { profile ->
+            val versionName = profile.verName
+            (includePattern == null || includePattern.containsMatchIn(versionName)) &&
+                (excludePattern == null || !excludePattern.containsMatchIn(versionName))
+        }.ifEmpty { installedProfiles }
+
+        if (preferred.isNotBlank() && matchingProfiles.any { contentVersionIdentifier(it) == preferred }) {
             return preferred
         }
 
-        val newestInstalled = installedProfiles.maxWithOrNull(
+        val newestInstalled = matchingProfiles.maxWithOrNull(
             compareBy<ContentProfile> { it.verCode }.thenBy { it.verName.lowercase() }
         )
         return newestInstalled?.let(::contentVersionIdentifier) ?: fallback
@@ -1190,13 +1409,13 @@ class SetupWizardActivity : FragmentActivity() {
         }
         Spacer(Modifier.height(12.dp))
         WizardActionCard(
-            title = "Install ImageFS",
+            title = "Install System Files",
             subtitle = "Required",
             completed = imageFsDone.value,
             buttonLabel = when {
                 imageFsDone.value -> "Installed"
                 imageFsInstalling.value -> "Installing"
-                else -> "Install ImageFS"
+                else -> "Install System Files"
             },
             onClick = { installImageFs() },
             enabled = !imageFsInstalling.value
@@ -1571,11 +1790,38 @@ class SetupWizardActivity : FragmentActivity() {
     }
 }
 
-private fun extractProtonMajor(verName: String): String {
-    val match = Regex("proton-(\\d+)").find(verName)
-    return match?.groupValues?.getOrNull(1) ?: "10"
-}
-
 private fun contentVersionIdentifier(profile: ContentProfile): String {
     return ContentsManager.getEntryName(profile).substringAfter('-')
+}
+
+private fun resolveJsonDownloadUrl(url: String): String {
+    val githubPrefix = "https://github.com/"
+    if (!url.startsWith(githubPrefix) || "/blob/" !in url) {
+        return url
+    }
+
+    val path = url.removePrefix(githubPrefix)
+    val ownerRepo = path.substringBefore("/blob/")
+    val blobPath = path.substringAfter("/blob/")
+    val branch = blobPath.substringBefore('/')
+    val filePath = blobPath.substringAfter('/', "")
+    if (ownerRepo.isBlank() || branch.isBlank() || filePath.isBlank()) {
+        return url
+    }
+
+    return "https://raw.githubusercontent.com/$ownerRepo/$branch/$filePath"
+}
+
+private fun runtimeDisplayLabel(profile: ContentProfile): String {
+    val prefix = when (profile.type) {
+        ContentProfile.ContentType.CONTENT_TYPE_WINE -> "Wine"
+        ContentProfile.ContentType.CONTENT_TYPE_PROTON -> "Proton"
+        else -> profile.type.toString()
+    }
+    val version = Regex("(?i)(?:wine|proton)-([0-9]+(?:\\.[0-9]+)?)")
+        .find(profile.verName)
+        ?.groupValues
+        ?.getOrNull(1)
+        ?: profile.verName
+    return "$prefix $version"
 }

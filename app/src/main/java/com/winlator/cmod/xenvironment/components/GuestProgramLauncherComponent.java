@@ -74,6 +74,35 @@ public class GuestProgramLauncherComponent extends EnvironmentComponent {
     public Container getContainer() { return this.container; }
     public void setContainer(Container container) { this.container = container; }
 
+    private String resolveInstalledRuntimeVersion(String currentVersion, ContentProfile.ContentType type) {
+        if (currentVersion != null && !currentVersion.isEmpty()) {
+            ContentProfile currentProfile = contentsManager.getProfileByEntryName(type.toString() + "-" + currentVersion);
+            if (currentProfile != null && currentProfile.isInstalled) {
+                return currentVersion;
+            }
+        }
+
+        ContentProfile preferredProfile = null;
+        for (ContentProfile profile : contentsManager.getProfiles(type)) {
+            if (!profile.isInstalled) continue;
+
+            if (preferredProfile == null ||
+                    profile.verCode > preferredProfile.verCode ||
+                    (profile.verCode == preferredProfile.verCode &&
+                            profile.verName.compareToIgnoreCase(preferredProfile.verName) > 0)) {
+                preferredProfile = profile;
+            }
+        }
+
+        if (preferredProfile != null) {
+            String entryName = ContentsManager.getEntryName(preferredProfile);
+            int firstDashIndex = entryName.indexOf('-');
+            return firstDashIndex >= 0 ? entryName.substring(firstDashIndex + 1) : preferredProfile.verName;
+        }
+
+        return currentVersion;
+    }
+
     private void extractBox64Files() {
         ImageFs imageFs = environment.getImageFs();
         Context context = environment.getContext();
@@ -84,6 +113,8 @@ public class GuestProgramLauncherComponent extends EnvironmentComponent {
 
         if (shortcut != null)
             box64Version = shortcut.getExtra("box64Version", box64Version);
+
+        box64Version = resolveInstalledRuntimeVersion(box64Version, ContentProfile.ContentType.CONTENT_TYPE_BOX64);
 
         Log.d("GuestProgramLauncherComponent", "box64Version: " + box64Version);
 
@@ -124,6 +155,9 @@ public class GuestProgramLauncherComponent extends EnvironmentComponent {
             wowbox64Version = shortcut.getExtra("box64Version", wowbox64Version);
             fexcoreVersion = shortcut.getExtra("fexcoreVersion", fexcoreVersion);
         }
+
+        wowbox64Version = resolveInstalledRuntimeVersion(wowbox64Version, ContentProfile.ContentType.CONTENT_TYPE_WOWBOX64);
+        fexcoreVersion = resolveInstalledRuntimeVersion(fexcoreVersion, ContentProfile.ContentType.CONTENT_TYPE_FEXCORE);
 
         Log.d("GuestProgramLauncherComponent", "box64Version in use: " + wowbox64Version);
         Log.d("GuestProgramLauncherComponent", "fexcoreVersion in use: " + fexcoreVersion);
@@ -361,7 +395,8 @@ public class GuestProgramLauncherComponent extends EnvironmentComponent {
         envVars.put("PATH", winePath + ":" +
                 rootDir.getPath() + "/usr/bin");
 
-        boolean prefer64BitWine = !wineInfo.isArm64EC();
+        // Arm64EC prefixes are 64-bit and must not be paired with the 32-bit wineserver.
+        boolean prefer64BitWine = true;
         String wineLoader = resolveWineBinary(winePath, prefer64BitWine);
         String wineServer = resolveWineServerBinary(winePath, prefer64BitWine);
         envVars.put("WINELOADER", wineLoader);

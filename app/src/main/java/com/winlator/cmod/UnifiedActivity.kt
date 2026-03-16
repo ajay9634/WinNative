@@ -4308,6 +4308,10 @@ class UnifiedActivity : ComponentActivity() {
         }
 
         kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
+            val launchExecutable = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                SteamService.getInstalledExe(app.id)
+            }
+
             // Initiate Cloud Sync download
             val prefixToPath: (String) -> String = { prefix ->
                 com.winlator.cmod.steam.enums.PathType.from(prefix).toAbsPath(context, app.id, SteamService.userSteamId?.accountID ?: 0L)
@@ -4320,54 +4324,51 @@ class UnifiedActivity : ComponentActivity() {
             ).await()
 
             if (shortcut != null) {
+                if (!SetupWizardActivity.isContainerUsable(context, shortcut!!.container)) {
+                    SetupWizardActivity.promptToInstallWineOrCreateContainer(
+                        context,
+                        shortcut!!.container.wineVersion
+                    )
+                    return@launch
+                }
                 // Existing shortcut: mount A: drive to game install path on its container
                 mountADrive(shortcut!!.container, gameInstallPath)
+                shortcut!!.putExtra("game_source", "STEAM")
+                shortcut!!.putExtra("game_install_path", gameInstallPath)
+                shortcut!!.putExtra("launch_exe_path", launchExecutable)
+                val loaderExec = "wine \"C:\\\\Program Files (x86)\\\\Steam\\\\steamclient_loader_x64.exe\""
+                val lines = com.winlator.cmod.core.FileUtils.readLines(shortcut!!.file)
+                val rewritten = StringBuilder()
+                var execUpdated = false
+                for (line in lines) {
+                    if (line.startsWith("Exec=")) {
+                        rewritten.append("Exec=").append(loaderExec).append("\n")
+                        execUpdated = true
+                    } else {
+                        rewritten.append(line).append("\n")
+                    }
+                }
+                if (!execUpdated) {
+                    rewritten.append("Exec=").append(loaderExec).append("\n")
+                }
+                com.winlator.cmod.core.FileUtils.writeString(shortcut!!.file, rewritten.toString())
+                shortcut!!.saveData()
                 val intent = Intent(context, XServerDisplayActivity::class.java)
                 intent.putExtra("container_id", shortcut!!.container.id)
                 intent.putExtra("shortcut_path", shortcut!!.file.path)
                 intent.putExtra("shortcut_name", shortcut!!.name)
                 context.startActivity(intent)
             } else {
-                // No shortcut — get or auto-create a container 
-                var containers = containerManager.getContainers()
                 var container = SetupWizardActivity.getPreferredGameContainer(context, containerManager)
-                if (container == null) {
-                    // Auto-create a default container using the preferred wine version
-                    try {
-                        val data = org.json.JSONObject()
-                        data.put("name", "Default")
-                        // Use the wine version of the first existing container if any, 
-                        // otherwise fall back to the default
-                        val existingContainers = containerManager.containers
-                        val defaultWineVersion = if (existingContainers.isNotEmpty()) {
-                            existingContainers[0].wineVersion
-                        } else {
-                            com.winlator.cmod.core.WineInfo.MAIN_WINE_VERSION.identifier()
-                        }
-                        data.put("wineVersion", defaultWineVersion)
-                        val contentsManager = com.winlator.cmod.contents.ContentsManager(context)
-                        contentsManager.syncContents()
-                        container = containerManager.createContainer(data, contentsManager)
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                    }
-                }
 
                 if (container == null) {
-                    android.widget.Toast.makeText(context, "Failed to create container. Open Game Settings first.", android.widget.Toast.LENGTH_SHORT).show()
+                    SetupWizardActivity.promptToInstallWineOrCreateContainer(context)
                     return@launch
                 }
 
                 mountADrive(container, gameInstallPath)
 
-                // Find the first .exe in the game directory
-                val exeFile = findGameExe(gameDir)
-                val execPath = if (exeFile != null) {
-                    val dosPath = exeFile.relativeTo(gameDir).path.replace("/", "\\\\")
-                    "wine \"A:\\\\${dosPath}\""
-                } else {
-                    "wine \"C:\\\\Program Files (x86)\\\\Steam\\\\steamclient_loader_x64.exe\""
-                }
+                val execPath = "wine \"C:\\\\Program Files (x86)\\\\Steam\\\\steamclient_loader_x64.exe\""
 
                 // Generate a shortcut dynamically
                 val desktopDir = container.getDesktopDir()
@@ -4384,6 +4385,7 @@ class UnifiedActivity : ComponentActivity() {
                 content.append("app_id=${app.id}\n")
                 content.append("container_id=${container.id}\n")
                 content.append("game_install_path=${gameInstallPath}\n")
+                content.append("launch_exe_path=${launchExecutable}\n")
                 content.append("use_container_defaults=1\n")
 
                 com.winlator.cmod.core.FileUtils.writeString(shortcutFile, content.toString())
@@ -4419,6 +4421,13 @@ class UnifiedActivity : ComponentActivity() {
             val args = launchArgsResult.getOrNull()?.joinToString(" ") ?: ""
 
             if (existingShortcut != null) {
+                if (!SetupWizardActivity.isContainerUsable(context, existingShortcut!!.container)) {
+                    SetupWizardActivity.promptToInstallWineOrCreateContainer(
+                        context,
+                        existingShortcut!!.container.wineVersion
+                    )
+                    return@launch
+                }
                 // Existing shortcut found: preserve per-game settings, just update install path and mount A: drive
                 val shortcut = existingShortcut!!
                 // Ensure game_install_path is always up-to-date
@@ -4477,24 +4486,10 @@ class UnifiedActivity : ComponentActivity() {
                     }
                 }
 
-                var containers = containerManager.getContainers()
                 var container = SetupWizardActivity.getPreferredGameContainer(context, containerManager)
 
                 if (container == null) {
-                    try {
-                        val data = org.json.JSONObject()
-                        data.put("name", "Default")
-                        data.put("wineVersion", com.winlator.cmod.core.WineInfo.MAIN_WINE_VERSION.identifier())
-                        val contentsManager = com.winlator.cmod.contents.ContentsManager(context)
-                        contentsManager.syncContents()
-                        container = containerManager.createContainer(data, contentsManager)
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                    }
-                }
-
-                if (container == null) {
-                    android.widget.Toast.makeText(context, "Failed to build container", android.widget.Toast.LENGTH_SHORT).show()
+                    SetupWizardActivity.promptToInstallWineOrCreateContainer(context)
                     return@launch
                 }
 
@@ -4550,6 +4545,13 @@ class UnifiedActivity : ComponentActivity() {
 
             if (existingShortcut != null) {
                 val shortcut = existingShortcut!!
+                if (!SetupWizardActivity.isContainerUsable(context, shortcut.container)) {
+                    SetupWizardActivity.promptToInstallWineOrCreateContainer(
+                        context,
+                        shortcut.container.wineVersion
+                    )
+                    return@launch
+                }
                 shortcut.putExtra("game_install_path", gameInstallPath)
 
                 // Repair broken Exec line if exe path is missing (just "A:\")
@@ -4625,19 +4627,9 @@ class UnifiedActivity : ComponentActivity() {
             }
 
             var container = SetupWizardActivity.getPreferredGameContainer(context, containerManager)
-            if (container == null) {
-                try {
-                    val data = org.json.JSONObject()
-                    data.put("name", "Default")
-                    data.put("wineVersion", com.winlator.cmod.core.WineInfo.MAIN_WINE_VERSION.identifier())
-                    val contentsManager = com.winlator.cmod.contents.ContentsManager(context)
-                    contentsManager.syncContents()
-                    container = containerManager.createContainer(data, contentsManager)
-                } catch (_: Exception) {}
-            }
 
             if (container == null) {
-                android.widget.Toast.makeText(context, "Failed to build container", android.widget.Toast.LENGTH_SHORT).show()
+                SetupWizardActivity.promptToInstallWineOrCreateContainer(context)
                 return@launch
             }
 
@@ -5306,19 +5298,11 @@ class UnifiedActivity : ComponentActivity() {
     // Create custom game shortcut + container
     private fun addCustomGame(context: android.content.Context, name: String, exePath: String, gameFolderPath: String) {
         val containerManager = ContainerManager(context)
-        var containers = containerManager.getContainers()
         var container = SetupWizardActivity.getPreferredGameContainer(context, containerManager)
         if (container == null) {
-            try {
-                val data = org.json.JSONObject()
-                data.put("name", "Default")
-                data.put("wineVersion", "proton-9.0-x86_64")
-                val contentsManager = com.winlator.cmod.contents.ContentsManager(context)
-                contentsManager.syncContents()
-                container = containerManager.createContainer(data, contentsManager)
-            } catch (e: Exception) { e.printStackTrace() }
+            SetupWizardActivity.promptToInstallWineOrCreateContainer(context)
+            return
         }
-        if (container == null) return
 
         // Mount the game folder as A: drive
         mountADrive(container, gameFolderPath)

@@ -1,6 +1,7 @@
 package com.winlator.cmod.core;
 
 import android.content.Context;
+import android.util.Log;
 
 import com.winlator.cmod.container.Container;
 import com.winlator.cmod.xenvironment.ImageFs;
@@ -27,6 +28,24 @@ public abstract class WineUtils {
             packageStorageSuffix = "/" + container.getManager().getContext().getPackageName() + "/storage";
         }
 
+        // Auto-fix containers missing D: and E: drives
+        String currentDrives = container.getDrives();
+        if (currentDrives != null && (!currentDrives.contains("D:") || !currentDrives.contains("E:"))) {
+            Log.d("WineUtils", "Container missing D: or E: drives, adding them...");
+            StringBuilder missingDrives = new StringBuilder();
+            if (!currentDrives.contains("D:")) {
+                missingDrives.append("D:").append(android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS));
+            }
+            if (!currentDrives.contains("E:")) {
+                missingDrives.append("E:/data/data/com.winnative.cmod/storage");
+            }
+            String updatedDrives = missingDrives.toString() + currentDrives;
+            container.setDrives(updatedDrives);
+            container.saveData();
+            Log.d("WineUtils", "Updated container drives to: " + updatedDrives);
+        }
+
+        String gameDirectoryPath = null;
         for (String[] drive : container.drivesIterator()) {
             File linkTarget = new File(drive[1]);
             String path = linkTarget.getAbsolutePath();
@@ -36,6 +55,50 @@ public abstract class WineUtils {
                 FileUtils.chmod(linkTarget, 0771);
             }
             FileUtils.symlink(path, dosdevicesPath+"/"+drive[0].toLowerCase(Locale.ENGLISH)+":");
+
+            // Track A: drive game directory for Steam symlink creation
+            if (drive[0].equals("A")) {
+                gameDirectoryPath = path;
+            }
+        }
+
+        // Create Steam directory structure and symlinks if we found the game directory on A:
+        if (gameDirectoryPath != null) {
+            String gameName = new File(gameDirectoryPath).getName();
+
+            // Create C:\Program Files (x86)\Steam\steamapps\common
+            File steamCommonDir = new File(container.getRootDir(), ".wine/drive_c/Program Files (x86)/Steam/steamapps/common");
+            if (!steamCommonDir.exists()) {
+                steamCommonDir.mkdirs();
+            }
+
+            // Symlink steamapps/common/{gameName} -> actual game directory
+            File steamGameLink = new File(steamCommonDir, gameName);
+            if (!steamGameLink.exists()) {
+                FileUtils.symlink(gameDirectoryPath, steamGameLink.getAbsolutePath());
+                Log.d("WineUtils", "Created Steam game symlink: " + steamGameLink + " -> " + gameDirectoryPath);
+            }
+
+            // Symlink _CommonRedist for redistributable files
+            File gameCommonRedist = new File(gameDirectoryPath, "_CommonRedist");
+            File steamworksSharedDir = new File(steamCommonDir, "Steamworks Shared");
+            if (!steamworksSharedDir.exists()) {
+                steamworksSharedDir.mkdirs();
+            }
+            File steamworksCommonRedist = new File(steamworksSharedDir, "_CommonRedist");
+            if (!steamworksCommonRedist.exists()) {
+                if (gameCommonRedist.exists() && gameCommonRedist.isDirectory()) {
+                    FileUtils.symlink(gameCommonRedist.getAbsolutePath(), steamworksCommonRedist.getAbsolutePath());
+                } else {
+                    gameCommonRedist.mkdirs();
+                }
+            }
+
+            // Ensure steamapps directory exists
+            File steamappsDir = new File(container.getRootDir(), ".wine/drive_c/Program Files (x86)/Steam/steamapps");
+            if (!steamappsDir.exists()) {
+                steamappsDir.mkdirs();
+            }
         }
     }
 
@@ -77,6 +140,14 @@ public abstract class WineUtils {
         File rootDir = ImageFs.find(context).getRootDir();
         File systemRegFile = new File(rootDir, ImageFs.WINEPREFIX+"/system.reg");
         File userRegFile = new File(rootDir, ImageFs.WINEPREFIX+"/user.reg");
+        File userCacheDir = new File(rootDir, "/home/xuser/.cache");
+        if (!userCacheDir.isDirectory()) {
+            userCacheDir.mkdirs();
+        }
+        File userConfigDir = new File(rootDir, "/home/xuser/.config");
+        if (!userConfigDir.isDirectory()) {
+            userConfigDir.mkdirs();
+        }
 
         try (WineRegistryEditor registryEditor = new WineRegistryEditor(systemRegFile)) {
             registryEditor.setStringValue("Software\\Classes\\.reg", null, "REGfile");
@@ -86,6 +157,17 @@ public abstract class WineUtils {
             registryEditor.setStringValue("Software\\Classes\\dllfile\\DefaultIcon", null, "shell32.dll,-154");
             registryEditor.setStringValue("Software\\Classes\\lnkfile\\DefaultIcon", null, "shell32.dll,-30");
             registryEditor.setStringValue("Software\\Classes\\inifile\\DefaultIcon", null, "shell32.dll,-151");
+
+            // Set up system fonts if not already done
+            File corefontsAddedFile = new File(userConfigDir, "corefonts.added");
+            if (!corefontsAddedFile.isFile()) {
+                try {
+                    setupSystemFonts(registryEditor);
+                    FileUtils.writeString(corefontsAddedFile, String.valueOf(System.currentTimeMillis()));
+                } catch (Throwable th) {
+                    Log.e("WineUtils", "Failed to setup system fonts", th);
+                }
+            }
         }
 
         final String[] direct3dLibs = {"d3d8", "d3d9", "d3d10", "d3d10_1", "d3d10core", "d3d11", "d3d12", "d3d12core", "ddraw", "dxgi", "wined3d"};
@@ -96,7 +178,87 @@ public abstract class WineUtils {
         try (WineRegistryEditor registryEditor = new WineRegistryEditor(userRegFile)) {
             for (String name : direct3dLibs) registryEditor.setStringValue(dllOverridesKey, name, "native,builtin");
             for (String name : xinputLibs) registryEditor.setStringValue(dllOverridesKey, name, "builtin,native");
+            // Conditional OpenGL override for ARM64EC
+            if (wineInfo != null && wineInfo.isArm64EC()) {
+                registryEditor.setStringValue(dllOverridesKey, "opengl32", "native,builtin");
+            }
             setWindowMetrics(registryEditor);
+        }
+
+        // Copy critical DLLs from wine installation to container
+        copyWineDllsToContainer(rootDir, wineInfo);
+    }
+
+    /**
+     * Copies critical DLLs from the wine installation to the container's system32/syswow64.
+     * This ensures games can find user32.dll, shell32.dll, dinput/xinput DLLs, etc.
+     */
+    private static void copyWineDllsToContainer(File rootDir, WineInfo wineInfo) {
+        File wineSystem32Dir = new File(rootDir, "/opt/wine/lib/wine/x86_64-windows");
+        File wineSysWoW64Dir = new File(rootDir, "/opt/wine/lib/wine/i386-windows");
+        File containerSystem32Dir = new File(rootDir, ImageFs.WINEPREFIX+"/drive_c/windows/system32");
+        File containerSysWoW64Dir = new File(rootDir, ImageFs.WINEPREFIX+"/drive_c/windows/syswow64");
+
+        final String[] dlnames = {
+            "user32.dll", "shell32.dll", "dinput.dll", "dinput8.dll",
+            "xinput1_1.dll", "xinput1_2.dll", "xinput1_3.dll", "xinput1_4.dll",
+            "xinput9_1_0.dll", "xinputuap.dll", "winemenubuilder.exe", "explorer.exe"
+        };
+
+        boolean win64 = wineInfo != null && wineInfo.isWin64();
+        for (String dlname : dlnames) {
+            File src32 = new File(wineSysWoW64Dir, dlname);
+            File dst32 = new File(win64 ? containerSysWoW64Dir : containerSystem32Dir, dlname);
+            if (src32.exists()) {
+                FileUtils.copy(src32, dst32);
+            }
+            if (win64) {
+                File src64 = new File(wineSystem32Dir, dlname);
+                File dst64 = new File(containerSystem32Dir, dlname);
+                if (src64.exists()) {
+                    FileUtils.copy(src64, dst64);
+                }
+            }
+        }
+    }
+
+    /**
+     * Registers core Windows fonts and Wine fonts in the registry.
+     */
+    private static void setupSystemFonts(WineRegistryEditor registryEditor) {
+        Log.d("WineUtils", "Setting up system fonts");
+        String[][] corefonts = {
+            {"Andale Mono (TrueType)", "andalemo.ttf"}, {"Arial (TrueType)", "arial.ttf"},
+            {"Arial Black (TrueType)", "ariblk.ttf"}, {"Arial Bold (TrueType)", "arialbd.ttf"},
+            {"Arial Bold Italic (TrueType)", "arialbi.ttf"}, {"Arial Italic (TrueType)", "ariali.ttf"},
+            {"Comic Sans MS (TrueType)", "comic.ttf"}, {"Comic Sans MS Bold (TrueType)", "comicbd.ttf"},
+            {"Courier New (TrueType)", "cour.ttf"}, {"Courier New Bold (TrueType)", "courbd.ttf"},
+            {"Courier New Bold Italic (TrueType)", "courbi.ttf"}, {"Courier New Italic (TrueType)", "couri.ttf"},
+            {"Georgia (TrueType)", "georgia.ttf"}, {"Georgia Bold (TrueType)", "georgiab.ttf"},
+            {"Georgia Bold Italic (TrueType)", "georgiaz.ttf"}, {"Georgia Italic (TrueType)", "georgiai.ttf"},
+            {"Impact (TrueType)", "impact.ttf"}, {"Times New Roman (TrueType)", "times.ttf"},
+            {"Times New Roman Bold (TrueType)", "timesbd.ttf"}, {"Times New Roman Bold Italic (TrueType)", "timesbi.ttf"},
+            {"Times New Roman Italic (TrueType)", "timesi.ttf"}, {"Trebuchet MS (TrueType)", "trebuc.ttf"},
+            {"Trebuchet MS Bold (TrueType)", "trebucbd.ttf"}, {"Trebuchet MS Bold Italic (TrueType)", "trebucbi.ttf"},
+            {"Trebuchet MS Italic (TrueType)", "trebucit.ttf"}, {"Verdana (TrueType)", "verdana.ttf"},
+            {"Verdana Bold (TrueType)", "verdanab.ttf"}, {"Verdana Bold Italic (TrueType)", "verdanaz.ttf"},
+            {"Verdana Italic (TrueType)", "verdanai.ttf"}, {"Webdings (TrueType)", "webdings.ttf"}
+        };
+        for (String[] font : corefonts) {
+            registryEditor.setStringValue("Software\\Microsoft\\Windows\\CurrentVersion\\Fonts", font[0], font[1]);
+            registryEditor.setStringValue("Software\\Microsoft\\Windows NT\\CurrentVersion\\Fonts", font[0], font[1]);
+        }
+
+        String[][] wineFonts = {
+            {"Marlett (TrueType)", "Z:\\opt\\wine\\share\\wine\\fonts\\marlett.ttf"},
+            {"Symbol (TrueType)", "Z:\\opt\\wine\\share\\wine\\fonts\\symbol.ttf"},
+            {"Tahoma (TrueType)", "Z:\\opt\\wine\\share\\wine\\fonts\\tahoma.ttf"},
+            {"Tahoma Bold (TrueType)", "Z:\\opt\\wine\\share\\wine\\fonts\\tahomabd.ttf"},
+            {"Wingdings (TrueType)", "Z:\\opt\\wine\\share\\wine\\fonts\\wingding.ttf"}
+        };
+        for (String[] font : wineFonts) {
+            registryEditor.setStringValue("Software\\Microsoft\\Windows\\CurrentVersion\\Fonts", font[0], font[1]);
+            registryEditor.setStringValue("Software\\Microsoft\\Windows NT\\CurrentVersion\\Fonts", font[0], font[1]);
         }
     }
 

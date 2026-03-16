@@ -2,14 +2,9 @@ package com.winlator.cmod.steam.utils
 
 import android.content.Context
 import com.winlator.cmod.SetupWizardActivity
-import com.winlator.cmod.steam.service.SteamService
 import com.winlator.cmod.container.Container
 import com.winlator.cmod.container.ContainerManager
-import java.io.File
 import timber.log.Timber
-
-import com.winlator.cmod.contents.ContentsManager
-import org.json.JSONObject
 
 object ContainerUtils {
     fun getContainerId(appId: String): String {
@@ -41,41 +36,28 @@ object ContainerUtils {
     }
 
     fun hasContainer(context: Context, containerId: String): Boolean {
-        val containerManager = ContainerManager(context)
-        return containerManager.getContainerById(extractGameIdFromContainerId(containerId)) != null
+        return getContainer(context, containerId) != null
     }
 
     fun getContainer(context: Context, containerId: String): Container? {
         val containerManager = ContainerManager(context)
         return containerManager.getContainerById(extractGameIdFromContainerId(containerId))
+            ?.takeIf { SetupWizardActivity.isContainerUsable(context, it) }
+    }
+
+    fun getUsableContainerOrNull(context: Context, appId: String): Container? {
+        val containerManager = ContainerManager(context)
+        SetupWizardActivity.getPreferredGameContainer(context, containerManager)?.let { return it }
+
+        val containerName = getContainerId(appId)
+        return containerManager.containers.firstOrNull {
+            it.name == containerName && SetupWizardActivity.isContainerUsable(context, it)
+        }
     }
 
     fun getOrCreateContainer(context: Context, appId: String): Container {
-        val containerManager = ContainerManager(context)
-        SetupWizardActivity.getPreferredGameContainer(context, containerManager)?.let { return it }
-        val containerName = getContainerId(appId)
-        
-        // Try to find an existing container by name (e.g., STEAM_1234)
-        for (container in containerManager.containers) {
-            if (container.name == containerName) return container
-        }
-
-        // If not found, create a new one
-        val data = JSONObject()
-        try {
-            data.put("name", containerName)
-            // Default settings for Steam games
-            data.put("wineVersion", "Main") // Use default wine version
-            data.put("screenSize", "1280x720")
-            data.put("graphicsDriver", "Turnip")
-            data.put("dxwrapper", "DXVK")
-            data.put("audioDriver", "pulseaudio")
-            data.put("wincomponents", "directx,vcrun2022")
-        } catch (e: Exception) {}
-
-        val contentsManager = ContentsManager(context)
-        return containerManager.createContainer(data, contentsManager) 
-            ?: throw IllegalStateException("Container creation failed")
+        return getUsableContainerOrNull(context, appId)
+            ?: throw IllegalStateException("No installed Wine/Proton container available")
     }
 
     fun getADrivePath(drives: String): String? {

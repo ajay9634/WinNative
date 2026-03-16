@@ -702,6 +702,20 @@ class SteamService : Service(), IChallengeUrlChanged {
         val externalAppInstallPath: String
             get() = Paths.get(PrefManager.externalStoragePath, "Steam", "steamapps", "common").pathString
 
+        val allInstallPaths: List<String>
+            get() {
+                val paths = mutableListOf(internalAppInstallPath)
+                if (PrefManager.externalStoragePath.isNotBlank()) {
+                    paths += externalAppInstallPath
+                }
+                for (volumePath in DownloadService.externalVolumePaths) {
+                    if (volumePath.isNotBlank()) {
+                        paths += Paths.get(volumePath, "Steam", "steamapps", "common").pathString
+                    }
+                }
+                return paths.distinct()
+            }
+
         private val internalAppStagingPath: String
             get() {
                 return Paths.get(DownloadService.baseDataDirPath, "Steam", "steamapps", "staging").pathString
@@ -1171,28 +1185,28 @@ class SteamService : Service(), IChallengeUrlChanged {
                 }
             }
 
-            // Internal first (legacy installs), external second
-            val internalPath = Paths.get(internalAppInstallPath, appName)
-            if (Files.exists(internalPath)) return internalPath.pathString
-            val internalOld = Paths.get(internalAppInstallPath, oldName)
-            if (oldName.isNotEmpty() && Files.exists(internalOld)) return internalOld.pathString
-
-            val externalPath = Paths.get(externalAppInstallPath, appName)
-            if (Files.exists(externalPath)) return externalPath.pathString
-            val externalOld = Paths.get(externalAppInstallPath, oldName)
-            if (oldName.isNotEmpty() && Files.exists(externalOld)) return externalOld.pathString
+            for (basePath in allInstallPaths) {
+                val candidate = Paths.get(basePath, appName)
+                if (Files.exists(candidate)) return candidate.pathString
+                if (oldName.isNotEmpty()) {
+                    val oldCandidate = Paths.get(basePath, oldName)
+                    if (Files.exists(oldCandidate)) return oldCandidate.pathString
+                }
+            }
 
             // Nothing on disk yet – default to whatever location you want new installs to use
             if (PrefManager.useExternalStorage) {
-                return externalPath.pathString
+                return Paths.get(externalAppInstallPath, appName).pathString
             }
-            return internalPath.pathString
+            return Paths.get(internalAppInstallPath, appName).pathString
         }
 
         private fun createSteamShortcut(context: Context, appId: Int) {
             try {
                 val container = ContainerUtils.getOrCreateContainer(context, "STEAM_$appId")
                 val appInfo = getAppInfoOf(appId) ?: return
+                val installPath = getAppDirPath(appId)
+                val launchExecutable = getInstalledExe(appId)
                 val desktopDir = container.getDesktopDir()
                 if (!desktopDir.exists()) desktopDir.mkdirs()
 
@@ -1207,6 +1221,8 @@ class SteamService : Service(), IChallengeUrlChanged {
                 content.append("game_source=STEAM\n")
                 content.append("app_id=$appId\n")
                 content.append("container_id=${container.id}\n")
+                content.append("game_install_path=$installPath\n")
+                content.append("launch_exe_path=$launchExecutable\n")
 
                 com.winlator.cmod.core.FileUtils.writeString(shortcutFile, content.toString())
                 Timber.i("Created Steam shortcut for ${appInfo.name} in container ${container.id}")
@@ -1412,6 +1428,12 @@ class SteamService : Service(), IChallengeUrlChanged {
             return (getAppInfoOf(appId)?.let { appInfo ->
                 getWindowsLaunchInfos(appId).firstOrNull()
             })?.executable ?: ""
+        }
+
+        fun getLaunchExecutable(appId: String, container: Container): String {
+            if (container.isLaunchRealSteam) return "steam"
+            val gameId = ContainerUtils.extractGameIdFromContainerId(appId)
+            return container.executablePath.ifEmpty { getInstalledExe(gameId) }
         }
 
         suspend fun deleteApp(appId: Int): Boolean = withContext(Dispatchers.IO) {

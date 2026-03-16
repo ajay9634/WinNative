@@ -535,6 +535,9 @@ public class XServerDisplayActivity extends AppCompatActivity {
                 wineVersion = shortcutWineVersion;
             }
         }
+        if (!ensureRequestedWineVersionInstalled()) {
+            return;
+        }
         wineInfo = WineInfo.fromIdentifier(this, contentsManager, wineVersion);
 
         imageFs.setWinePath(wineInfo.path);
@@ -580,6 +583,9 @@ public class XServerDisplayActivity extends AppCompatActivity {
                     if (shortcutWineVersion != null && !shortcutWineVersion.isEmpty()) {
                         Log.d("XServerDisplayActivity", "Overriding wine version from shortcut: " + shortcutWineVersion);
                         wineVersion = shortcutWineVersion;
+                    }
+                    if (!ensureRequestedWineVersionInstalled()) {
+                        return;
                     }
                     wineInfo = WineInfo.fromIdentifier(this, contentsManager, wineVersion);
                     imageFs.setWinePath(wineInfo.path);
@@ -707,6 +713,18 @@ public class XServerDisplayActivity extends AppCompatActivity {
             startupSelection = shortcut.getExtra("startupSelection", String.valueOf(container.getStartupSelection()));
         } else {
             startupSelection = String.valueOf(container.getStartupSelection());
+        }
+
+        dxwrapperConfig = normalizeDxwrapperConfigForCurrentWine(dxwrapperConfig);
+        if (shortcut != null) {
+            String shortcutDxwrapperConfig = shortcut.getExtra("dxwrapperConfig");
+            if (!shortcutDxwrapperConfig.isEmpty() && !dxwrapperConfig.equals(shortcutDxwrapperConfig)) {
+                shortcut.putExtra("dxwrapperConfig", dxwrapperConfig);
+                shortcut.saveData();
+            }
+        } else if (!dxwrapperConfig.equals(container.getDXWrapperConfig())) {
+            container.setDXWrapperConfig(dxwrapperConfig);
+            container.saveData();
         }
 
         this.graphicsDriverConfig = GraphicsDriverConfigDialog.parseGraphicsDriverConfig(graphicsDriverConfig);
@@ -1470,6 +1488,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
 
         if (dxwrapper.contains("dxvk")) {
             String dxwrapperConfig = shortcut != null ? shortcut.getExtra("dxwrapperConfig", this.dxwrapperConfig.toString()) : this.dxwrapperConfig.toString();
+            dxwrapperConfig = normalizeDxwrapperConfigForCurrentWine(dxwrapperConfig);
             KeyValueSet currentDXWrapperConfig = DXVKConfigDialog.parseConfig(dxwrapperConfig);
             String dxvkWrapper = "dxvk-" + currentDXWrapperConfig.get("version");
             String vkd3dWrapper = "vkd3d-" + currentDXWrapperConfig.get("vkd3dVersion");
@@ -1496,18 +1515,21 @@ public class XServerDisplayActivity extends AppCompatActivity {
             Log.d("XServerDisplayActivity", "Ensuring Steam client is ready (isSteamGame=" + isSteamGame + ")...");
             boolean steamReady = SteamBridge.ensureSteamReady(this);
             Log.d("XServerDisplayActivity", "Steam client ready: " + steamReady);
-            
+
+            // Verify essential Steam client DLLs exist in the wine prefix
+            verifySteamClientFiles();
+
             // Replace the game's steam_api DLLs and set up steam_settings for auth
             if (isSteamGame) {
                 try {
                     int appId = Integer.parseInt(shortcut.getExtra("app_id"));
                     String gameInstallPath = SteamBridge.getAppDirPath(appId);
                     File gameDir = new File(gameInstallPath);
-                    
+
                     if (gameDir.exists()) {
                         if (container.isUseLegacyDRM()) {
                             // Legacy DRM mode: replace steam_api.dll with steampipe stubs
-                            // This only works for offline/LAN - stubs can't do real auth
+                            // and set up steam_settings next to each DLL for Goldberg
                             replaceSteamApiDlls(gameDir);
                             setupSteamSettings(gameDir, appId);
                             Log.d("XServerDisplayActivity", "Legacy DRM Steam setup complete for appId=" + appId);
@@ -1515,18 +1537,27 @@ public class XServerDisplayActivity extends AppCompatActivity {
                             // ColdClientLoader mode (default, online play):
                             // 1. MUST RESTORE the game's actual DLLs if they were previously replaced by TCP stubs
                             restoreSteamApiDlls(gameDir);
-                            
+
                             // 2. Write steam_settings/ next to steamclient.dll in the Steam directory
                             // The Goldberg steamclient DLLs read from this location
                             File steamDir = new File(container.getRootDir(), ".wine/drive_c/Program Files (x86)/Steam");
                             steamDir.mkdirs();
                             setupSteamSettingsForColdClient(steamDir, appId);
-                            
-                            // 3. Write ColdClientLoader.ini with game exe path
+
+                            // 3. ALSO set up steam_settings next to the game's steam_api DLLs
+                            // Some games load steam_api.dll directly and need settings there too
+                            setupSteamSettings(gameDir, appId);
+
+                            // 4. Generate steam_interfaces.txt from original DLLs for ColdClient mode too
+                            generateSteamInterfacesForGame(gameDir);
+
+                            // 5. Write ColdClientLoader.ini with game exe path
                             String gameExeWinPath = findGameExeWinPath(appId, gameDir);
                             if (gameExeWinPath != null) {
                                 writeColdClientIniForLaunch(appId, gameExeWinPath);
                                 Log.d("XServerDisplayActivity", "ColdClientLoader setup complete: exe=" + gameExeWinPath + " appId=" + appId);
+                            } else {
+                                Log.w("XServerDisplayActivity", "Could not find game exe for ColdClientLoader, appId=" + appId);
                             }
                         }
                         // Common setup for both modes
@@ -1697,7 +1728,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
         }
 
         // Add Steam client component for Steam games (Goldberg emulator support)
-        if (shortcut != null && "STEAM".equals(shortcut.getExtra("game_source"))) {
+        if (shortcut != null && "STEAM".equals(shortcut.getExtra("game_source")) && !container.isLaunchRealSteam()) {
             Log.d("XServerDisplayActivity", "Adding SteamClientComponent for Steam game");
             environment.addComponent(new SteamClientComponent());
         }
@@ -1711,6 +1742,24 @@ public class XServerDisplayActivity extends AppCompatActivity {
 
         // Add the launcher to our environment
         environment.addComponent(guestProgramLauncherComponent);
+
+        // Set up Steam token login for real Steam mode (must be after guestProgramLauncherComponent is added)
+        if (container != null && container.isLaunchRealSteam()) {
+            try {
+                String steamId64 = String.valueOf(com.winlator.cmod.steam.utils.PrefManager.INSTANCE.getSteamUserSteamId64());
+                String username = com.winlator.cmod.steam.utils.PrefManager.INSTANCE.getUsername();
+                String refreshToken = com.winlator.cmod.steam.utils.PrefManager.INSTANCE.getRefreshToken();
+                if (refreshToken != null && !refreshToken.isEmpty()) {
+                    com.winlator.cmod.steam.utils.SteamTokenLogin tokenLogin =
+                            new com.winlator.cmod.steam.utils.SteamTokenLogin(
+                                    steamId64, username, refreshToken, imageFs, guestProgramLauncherComponent);
+                    tokenLogin.setupSteamFiles();
+                    Log.d("XServerDisplayActivity", "SteamTokenLogin set up for real Steam mode");
+                }
+            } catch (Exception e) {
+                Log.w("XServerDisplayActivity", "Failed to set up SteamTokenLogin", e);
+            }
+        }
 
         // Start all environment components (XServer, Audio, etc.)
         environment.startEnvironmentComponents();
@@ -1855,6 +1904,83 @@ public class XServerDisplayActivity extends AppCompatActivity {
         }
     }
 
+    private String normalizeDxwrapperConfigForCurrentWine(String dxwrapperConfig) {
+        KeyValueSet config = DXVKConfigDialog.parseConfig(dxwrapperConfig);
+        boolean isArm64EC = wineInfo != null && wineInfo.isArm64EC();
+        boolean changed = false;
+
+        String normalizedDxvk = resolveInstalledGraphicsComponentVersion(
+                config.get("version"),
+                ContentProfile.ContentType.CONTENT_TYPE_DXVK,
+                isArm64EC
+        );
+        if (!normalizedDxvk.equals(config.get("version"))) {
+            config.put("version", normalizedDxvk);
+            changed = true;
+        }
+
+        String vkd3dVersion = config.get("vkd3dVersion");
+        if (!vkd3dVersion.isEmpty() && !"None".equalsIgnoreCase(vkd3dVersion)) {
+            String normalizedVkd3d = resolveInstalledGraphicsComponentVersion(
+                    vkd3dVersion,
+                    ContentProfile.ContentType.CONTENT_TYPE_VKD3D,
+                    isArm64EC
+            );
+            if (!normalizedVkd3d.equals(vkd3dVersion)) {
+                config.put("vkd3dVersion", normalizedVkd3d);
+                changed = true;
+            }
+        }
+
+        return changed ? config.toString() : dxwrapperConfig;
+    }
+
+    private String resolveInstalledGraphicsComponentVersion(
+            String currentVersion,
+            ContentProfile.ContentType type,
+            boolean isArm64EC
+    ) {
+        if (!currentVersion.isEmpty()) {
+            ContentProfile currentProfile = contentsManager.getProfileByEntryName(type.toString() + "-" + currentVersion);
+            if (currentProfile != null && currentProfile.isInstalled) {
+                boolean currentIsArm64 = isArm64ComponentVersion(currentVersion);
+                if (currentIsArm64 == isArm64EC) {
+                    return currentVersion;
+                }
+            }
+        }
+
+        ContentProfile preferredProfile = null;
+        for (ContentProfile profile : contentsManager.getProfiles(type)) {
+            if (!profile.isInstalled) continue;
+
+            String versionToken = getContentVersionToken(profile);
+            if (isArm64ComponentVersion(versionToken) != isArm64EC) continue;
+
+            if (preferredProfile == null ||
+                    profile.verCode > preferredProfile.verCode ||
+                    (profile.verCode == preferredProfile.verCode &&
+                            profile.verName.compareToIgnoreCase(preferredProfile.verName) > 0)) {
+                preferredProfile = profile;
+            }
+        }
+
+        if (preferredProfile != null) {
+            return getContentVersionToken(preferredProfile);
+        }
+        return currentVersion;
+    }
+
+    private String getContentVersionToken(ContentProfile profile) {
+        String entryName = ContentsManager.getEntryName(profile);
+        int firstDashIndex = entryName.indexOf('-');
+        return firstDashIndex >= 0 ? entryName.substring(firstDashIndex + 1) : profile.verName;
+    }
+
+    private boolean isArm64ComponentVersion(String version) {
+        return version != null && version.toLowerCase().contains("arm64ec");
+    }
+
     private void ensureWinePrefixReady() {
         if (container == null || wineInfo == null) return;
 
@@ -1887,6 +2013,16 @@ public class XServerDisplayActivity extends AppCompatActivity {
         } else {
             Log.e("XServerDisplayActivity", "Wine prefix repair failed for container " + container.id);
         }
+    }
+
+    private boolean ensureRequestedWineVersionInstalled() {
+        if (SetupWizardActivity.isWineVersionInstalled(this, wineVersion)) {
+            return true;
+        }
+        Log.e("XServerDisplayActivity", "Requested Wine/Proton is not installed: " + wineVersion);
+        SetupWizardActivity.promptToInstallWineOrCreateContainer(this, wineVersion);
+        finish();
+        return false;
     }
 
     private void showInputControlsDialog() {
@@ -2512,35 +2648,18 @@ public class XServerDisplayActivity extends AppCompatActivity {
 
             if (gameSource.equals("STEAM")) {
                 int appId = Integer.parseInt(shortcut.getExtra("app_id"));
-                boolean hasCustomSteamExe = path != null &&
-                        !path.isEmpty() &&
-                        !path.equalsIgnoreCase("C:\\Program Files (x86)\\Steam\\steamclient_loader_x64.exe");
 
-                if (hasCustomSteamExe) {
-                    int lastBackslash = path.lastIndexOf("\\");
-                    if (lastBackslash >= 0) {
-                        String dir = path.substring(0, lastBackslash);
-                        if (dir.endsWith(":")) dir += "\\";
-                        String file = path.substring(lastBackslash + 1);
-
-                        File nativeDir = com.winlator.cmod.core.WineUtils.getNativePath(imageFs, dir);
-                        if (nativeDir != null && nativeDir.exists()) {
-                            launcherComponent.setWorkingDir(nativeDir);
-                            Log.d("XServerDisplayActivity", "Set native working dir for Steam override: " + nativeDir.getPath());
-                        }
-
-                        if (wineInfo != null && wineInfo.isArm64EC()) {
-                            args = "\"" + path + "\"";
-                        } else {
-                            args = "/dir \"" + dir + "\" \"" + file + "\"";
-                        }
-                    } else {
-                        args = "\"" + path + "\"";
-                    }
-                } else if (!container.isUseLegacyDRM()) {
-                    args = "/dir \"C:\\Program Files (x86)\\Steam\" \"steamclient_loader_x64.exe\"";
+                if (!container.isUseLegacyDRM()) {
+                    // ColdClient mode: ALWAYS launch through steamclient_loader_x64.exe
+                    // The ColdClientLoader.ini specifies the actual game exe path
                     File nativeDir = com.winlator.cmod.core.WineUtils.getNativePath(imageFs, "C:\\Program Files (x86)\\Steam");
                     if (nativeDir != null && nativeDir.exists()) launcherComponent.setWorkingDir(nativeDir);
+                    if (wineInfo != null && wineInfo.isArm64EC()) {
+                        args = "\"C:\\Program Files (x86)\\Steam\\steamclient_loader_x64.exe\"";
+                    } else {
+                        args = "/dir \"C:\\Program Files (x86)\\Steam\" \"steamclient_loader_x64.exe\"";
+                    }
+                    Log.d("XServerDisplayActivity", "ColdClient launch via steamclient_loader_x64.exe for appId=" + appId);
                 } else {
                     String gameExeWinPath = findGameExeWinPath(appId, new File(SteamBridge.getAppDirPath(appId)));
                     if (gameExeWinPath != null) {
@@ -2706,37 +2825,173 @@ public class XServerDisplayActivity extends AppCompatActivity {
     }
 
     /**
+     * Verifies essential Steam client files exist in the wine prefix.
+     * The xuser symlink ensures extraction goes to the active container,
+     * but if files are missing (e.g. after prefix repair), force re-extraction.
+     */
+    private void verifySteamClientFiles() {
+        File steamDir = new File(container.getRootDir(), ".wine/drive_c/Program Files (x86)/Steam");
+        String[] criticalFiles = {
+            "steamclient.dll",
+            "steamclient64.dll",
+            "steamclient_loader_x64.exe",
+            "steam.exe"
+        };
+
+        boolean allPresent = steamDir.exists();
+        if (allPresent) {
+            for (String filename : criticalFiles) {
+                File f = new File(steamDir, filename);
+                if (!f.exists() || f.length() == 0) {
+                    allPresent = false;
+                    Log.w("XServerDisplayActivity", "Missing Steam client file: " + filename);
+                    break;
+                }
+            }
+        }
+
+        if (!allPresent) {
+            Log.w("XServerDisplayActivity", "Steam client files missing in container, forcing re-extraction");
+            // Force re-extraction by extracting both archives to imageFs root
+            // The xuser symlink will direct files to the active container
+            try {
+                File steamFile = new File(getFilesDir(), "steam.tzst");
+                File expFile = new File(getFilesDir(), "experimental-drm-20260116.tzst");
+                if (steamFile.exists()) {
+                    com.winlator.cmod.core.TarCompressorUtils.extract(
+                            com.winlator.cmod.core.TarCompressorUtils.Type.ZSTD,
+                            steamFile, imageFs.getRootDir(), null);
+                }
+                if (expFile.exists()) {
+                    com.winlator.cmod.core.TarCompressorUtils.extract(
+                            com.winlator.cmod.core.TarCompressorUtils.Type.ZSTD,
+                            expFile, imageFs.getRootDir(), null);
+                }
+                Log.d("XServerDisplayActivity", "Re-extracted Steam client files to container");
+            } catch (Exception e) {
+                Log.e("XServerDisplayActivity", "Failed to re-extract Steam files", e);
+            }
+        }
+    }
+
+    /**
+     * Generates steam_interfaces.txt for all steam_api DLLs in the game directory.
+     * Used in ColdClient mode where the original DLLs remain but Goldberg steamclient
+     * still needs to know which interfaces the game expects.
+     */
+    private void generateSteamInterfacesForGame(File gameDir) {
+        if (gameDir == null || !gameDir.exists()) return;
+        File[] files = gameDir.listFiles();
+        if (files == null) return;
+
+        for (File file : files) {
+            if (file.isDirectory() && !file.getName().equals("steam_settings")) {
+                generateSteamInterfacesForGame(file);
+            } else if (file.isFile()) {
+                String name = file.getName().toLowerCase();
+                if (name.equals("steam_api.dll") || name.equals("steam_api64.dll")) {
+                    // In ColdClient mode the DLL is the original (not replaced),
+                    // so scan it directly for interface strings
+                    generateSteamInterfacesFromDll(file.getParentFile(), file);
+                }
+            }
+        }
+    }
+
+    /**
+     * Generates steam_interfaces.txt by scanning a DLL (original or backup) for
+     * Steam interface version strings (e.g., SteamUser023, SteamApps008).
+     */
+    private void generateSteamInterfacesFromDll(File dir, File dllFile) {
+        File interfacesFile = new File(dir, "steam_interfaces.txt");
+        if (interfacesFile.exists()) return;
+
+        if (!dllFile.exists()) return;
+
+        try {
+            byte[] bytes = java.nio.file.Files.readAllBytes(dllFile.toPath());
+            java.util.TreeSet<String> interfaces = new java.util.TreeSet<>();
+
+            StringBuilder sb = new StringBuilder();
+            for (byte b : bytes) {
+                int ch = b & 0xFF;
+                if (ch >= 0x20 && ch <= 0x7E) {
+                    sb.append((char) ch);
+                } else {
+                    if (sb.length() >= 10) {
+                        String candidate = sb.toString();
+                        if (candidate.matches("^Steam[A-Za-z]+[0-9]{3}$")) {
+                            interfaces.add(candidate);
+                        }
+                    }
+                    sb.setLength(0);
+                }
+            }
+            if (sb.length() >= 10) {
+                String candidate = sb.toString();
+                if (candidate.matches("^Steam[A-Za-z]+[0-9]{3}$")) {
+                    interfaces.add(candidate);
+                }
+            }
+
+            if (!interfaces.isEmpty()) {
+                StringBuilder content = new StringBuilder();
+                for (String iface : interfaces) {
+                    content.append(iface).append("\n");
+                }
+                FileUtils.writeString(interfacesFile, content.toString());
+                Log.d("XServerDisplayActivity", "Generated steam_interfaces.txt with " + interfaces.size() + " interfaces in " + dir.getName());
+            }
+        } catch (Exception e) {
+            Log.w("XServerDisplayActivity", "Failed to generate steam_interfaces.txt from " + dllFile.getName(), e);
+        }
+    }
+
+    /**
      * Writes ColdClientLoader.ini with the correct game exe path for the Goldberg Steam emulator.
+     * Uses a relative path through the steamapps/common symlink so the loader resolves correctly.
      * @param appId Steam app ID
-     * @param gameExeWinPath Windows-style path to the game exe (e.g. A:\Among Us.exe)
+     * @param gameExeWinPath Windows-style path to the game exe (e.g. A:\SubDir\game.exe)
      */
     private void writeColdClientIniForLaunch(int appId, String gameExeWinPath) {
         File iniFile = new File(container.getRootDir(), ".wine/drive_c/Program Files (x86)/Steam/ColdClientLoader.ini");
         iniFile.getParentFile().mkdirs();
-        
-        // Determine the exe directory for ExeRunDir
-        String exeRunDir = "";
-        int lastBackslash = gameExeWinPath.lastIndexOf("\\");
-        if (lastBackslash >= 0) {
-            exeRunDir = gameExeWinPath.substring(0, lastBackslash);
+
+        // Convert the A:\path to a relative path through steamapps\common\{gameName}\
+        // The symlink created in createDosdevicesSymlinks() ensures this resolves to the real game dir
+        String exePath;
+        String gameInstallPath = SteamBridge.getAppDirPath(appId);
+        String gameDirName = new File(gameInstallPath).getName();
+
+        if (gameExeWinPath != null && gameExeWinPath.startsWith("A:\\")) {
+            // Strip the A:\ prefix and prepend the Steam relative path
+            String relativeExe = gameExeWinPath.substring(3); // Remove "A:\"
+            exePath = "steamapps\\common\\" + gameDirName + "\\" + relativeExe;
+        } else if (gameExeWinPath != null) {
+            // Already a different format, use as-is but try to make relative
+            exePath = "steamapps\\common\\" + gameDirName + "\\" + gameExeWinPath.replace("/", "\\");
+        } else {
+            exePath = "";
         }
-        
+
+        String exeCommandLine = container.getExecArgs() != null ? container.getExecArgs() : "";
+
         String iniContent = "[SteamClient]\n" +
                 "\n" +
-                "Exe=" + gameExeWinPath + "\n" +
-                "ExeRunDir=" + exeRunDir + "\n" +
-                "ExeCommandLine=\n" +
+                "Exe=" + exePath + "\n" +
+                "ExeRunDir=\n" +
+                "ExeCommandLine=" + exeCommandLine + "\n" +
                 "AppId=" + appId + "\n" +
                 "\n" +
-                "# path to the steamclient dlls\n" +
+                "# path to the steamclient dlls, both must be set, absolute paths or relative to the loader directory\n" +
                 "SteamClientDll=steamclient.dll\n" +
                 "SteamClient64Dll=steamclient64.dll\n" +
                 "\n" +
                 "[Injection]\n" +
                 "IgnoreLoaderArchDifference=1\n";
-        
+
         FileUtils.writeString(iniFile, iniContent);
-        Log.d("XServerDisplayActivity", "Wrote ColdClientLoader.ini: Exe=" + gameExeWinPath + " AppId=" + appId);
+        Log.d("XServerDisplayActivity", "Wrote ColdClientLoader.ini: Exe=" + exePath + " AppId=" + appId);
     }
     
     /**
@@ -2753,7 +3008,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
         long accountId = steamId64Long > 0 ? (steamId64Long & 0xFFFFFFFFL) : 0L;
         String language = container.getExtra("containerLanguage", "english");
         if (language == null || language.isEmpty()) language = "english";
-        
+
         // Get encrypted app ticket for online auth
         String ticketBase64 = null;
         try {
@@ -2766,15 +3021,15 @@ public class XServerDisplayActivity extends AppCompatActivity {
         } catch (Exception e) {
             Log.w("XServerDisplayActivity", "Failed to get encrypted app ticket for ColdClient", e);
         }
-        
+
         // Create steam_settings directory next to steamclient.dll
         File settingsDir = new File(steamDir, "steam_settings");
         settingsDir.mkdirs();
-        
-        // steam_appid.txt
+
+        // steam_appid.txt in both locations
         FileUtils.writeString(new File(settingsDir, "steam_appid.txt"), String.valueOf(appId));
         FileUtils.writeString(new File(steamDir, "steam_appid.txt"), String.valueOf(appId));
-        
+
         // configs.user.ini - account info + language + ticket
         StringBuilder userIni = new StringBuilder();
         userIni.append("[user::general]\n");
@@ -2786,25 +3041,41 @@ public class XServerDisplayActivity extends AppCompatActivity {
         }
         userIni.append("\n[user::saves]\n");
         userIni.append("local_save_path=C:\\Program Files (x86)\\Steam\\userdata\\").append(accountId).append("\n");
-        
+
         FileUtils.writeString(new File(settingsDir, "configs.user.ini"), userIni.toString());
-        
-        // configs.main.ini - connectivity (enable online)
-        String mainIni = "[main::connectivity]\n" +
-                "disable_lan_only=1\n" +
-                "[main::general]\n" +
-                "enable_overlay=0\n";
-        FileUtils.writeString(new File(settingsDir, "configs.main.ini"), mainIni);
-        
+
+        // configs.main.ini - connectivity and overlay
+        boolean isOfflineMode = "true".equals(container.getExtra("steamOfflineMode", "false"));
+        StringBuilder mainIni = new StringBuilder();
+        mainIni.append("[main::connectivity]\n");
+        mainIni.append("disable_lan_only=").append(isOfflineMode ? "0" : "1").append("\n");
+        if (isOfflineMode) {
+            mainIni.append("offline=1\n");
+        }
+        mainIni.append("[main::general]\n");
+        mainIni.append("enable_overlay=0\n");
+        FileUtils.writeString(new File(settingsDir, "configs.main.ini"), mainIni.toString());
+
         // configs.app.ini - DLC settings and cloud saves
-        String appIni = "[app::dlcs]\n" +
-                "unlock_all=1\n\n" +
-                "[app::cloud_save::general]\n" +
-                "create_default_dir=1\n" +
-                "create_specific_dirs=1\n";
-        FileUtils.writeString(new File(settingsDir, "configs.app.ini"), appIni);
-        
-        Log.d("XServerDisplayActivity", "Created ColdClient steam_settings in " + steamDir.getAbsolutePath() + 
+        StringBuilder appIni = new StringBuilder();
+        appIni.append("[app::dlcs]\n");
+        appIni.append("unlock_all=1\n\n");
+        appIni.append("[app::cloud_save::general]\n");
+        appIni.append("create_default_dir=1\n");
+        appIni.append("create_specific_dirs=1\n");
+        FileUtils.writeString(new File(settingsDir, "configs.app.ini"), appIni.toString());
+
+        // supported_languages.txt
+        String supportedLanguages = "arabic\nbulgarian\nschinese\ntchinese\nczech\ndanish\ndutch\n" +
+                "english\nfinnish\nfrench\ngerman\ngreek\nhungarian\nitalian\njapanese\nkoreana\n" +
+                "norwegian\npolish\nportuguese\nbrazilian\nromanian\nrussian\nspanish\nlatam\n" +
+                "swedish\nthai\nturkish\nukrainian\nvietnamese\n";
+        FileUtils.writeString(new File(settingsDir, "supported_languages.txt"), supportedLanguages);
+
+        // Write steam_appid.txt at Steam root level
+        FileUtils.writeString(new File(steamDir, "steam_appid.txt"), String.valueOf(appId));
+
+        Log.d("XServerDisplayActivity", "Created ColdClient steam_settings in " + steamDir.getAbsolutePath() +
                 " (user=" + accountName + ", id=" + accountSteamId + ", ticket=" + (ticketBase64 != null ? "yes" : "no") + ")");
     }
     
@@ -2813,28 +3084,66 @@ public class XServerDisplayActivity extends AppCompatActivity {
      * Uses shortcut.path if available, otherwise auto-detects from game install directory.
      */
     private String findGameExeWinPath(int appId, File gameDir) {
-        // Check if shortcut already has a valid Windows path
-        if (shortcut != null && shortcut.path != null && !shortcut.path.isEmpty() 
-                && !shortcut.path.contains("steamclient_loader") 
+        if (gameDir == null || !gameDir.exists()) return null;
+
+        String gameInstallPath = gameDir.getAbsolutePath();
+
+        if (appId > 0) {
+            String launchExePath = shortcut != null ? shortcut.getExtra("launch_exe_path") : "";
+            if (launchExePath == null) launchExePath = "";
+
+            String resolvedRelativePath = launchExePath;
+            if (!resolvedRelativePath.isEmpty()) {
+                File configuredFile = new File(resolvedRelativePath);
+                if (configuredFile.isAbsolute()) {
+                    String configuredAbsolutePath = configuredFile.getAbsolutePath();
+                    if (configuredAbsolutePath.equals(gameInstallPath) || configuredAbsolutePath.startsWith(gameInstallPath + File.separator)) {
+                        resolvedRelativePath = configuredAbsolutePath.substring(gameInstallPath.length());
+                        if (resolvedRelativePath.startsWith(File.separator)) {
+                            resolvedRelativePath = resolvedRelativePath.substring(1);
+                        }
+                    } else {
+                        resolvedRelativePath = "";
+                    }
+                }
+            }
+
+            if (resolvedRelativePath.isEmpty()) {
+                resolvedRelativePath = SteamBridge.getInstalledExe(appId);
+            }
+
+            if (resolvedRelativePath != null && !resolvedRelativePath.isEmpty()) {
+                if (shortcut != null && (shortcut.getExtra("launch_exe_path") == null || shortcut.getExtra("launch_exe_path").isEmpty())) {
+                    shortcut.putExtra("launch_exe_path", resolvedRelativePath);
+                    shortcut.saveData();
+                }
+                String normalizedRelativePath = resolvedRelativePath.replace("/", "\\");
+                while (normalizedRelativePath.startsWith("\\")) {
+                    normalizedRelativePath = normalizedRelativePath.substring(1);
+                }
+                if (!normalizedRelativePath.isEmpty()) {
+                    return "A:\\" + normalizedRelativePath;
+                }
+            }
+        }
+
+        if (shortcut != null && shortcut.path != null && !shortcut.path.isEmpty()
+                && !shortcut.path.contains("steamclient_loader")
                 && shortcut.path.contains("\\")) {
-            
             String safePath = shortcut.path;
             if (safePath.matches("^[A-Z]:[^\\\\/].*")) {
                 safePath = safePath.substring(0, 2) + "\\" + safePath.substring(2);
             }
             return safePath;
         }
-        
-        // Auto-detect from game install directory
-        String gameInstallPath = gameDir.getAbsolutePath();
+
         File exeFile = findGameExe(gameDir);
         if (exeFile != null) {
-            String relativePath = exeFile.getAbsolutePath()
-                    .substring(gameInstallPath.length());
+            String relativePath = exeFile.getAbsolutePath().substring(gameInstallPath.length());
             if (relativePath.startsWith("/")) relativePath = relativePath.substring(1);
             return "A:\\" + relativePath.replace("/", "\\");
         }
-        
+
         return null;
     }
 
@@ -2981,14 +3290,14 @@ public class XServerDisplayActivity extends AppCompatActivity {
         if (hasSteamDll) {
             // Write steam_appid.txt in this directory
             FileUtils.writeString(new File(dir, "steam_appid.txt"), String.valueOf(appId));
-            
+
             // Create steam_settings directory
             File settingsDir = new File(dir, "steam_settings");
             settingsDir.mkdirs();
-            
+
             // steam_appid.txt in settings dir too
             FileUtils.writeString(new File(settingsDir, "steam_appid.txt"), String.valueOf(appId));
-            
+
             // configs.user.ini - account info + language + ticket
             StringBuilder userIni = new StringBuilder();
             userIni.append("[user::general]\n");
@@ -2999,19 +3308,37 @@ public class XServerDisplayActivity extends AppCompatActivity {
                 userIni.append("ticket=").append(ticketBase64).append("\n");
             }
             FileUtils.writeString(new File(settingsDir, "configs.user.ini"), userIni.toString());
-            
-            // configs.main.ini - connectivity (enable online)
-            String mainIni = "[main::connectivity]\n" +
-                    "disable_lan_only=1\n";
-            FileUtils.writeString(new File(settingsDir, "configs.main.ini"), mainIni);
-            
-            // configs.app.ini - DLC settings
-            String appIni = "[app::dlcs]\n" +
-                    "unlock_all=1\n";
-            FileUtils.writeString(new File(settingsDir, "configs.app.ini"), appIni);
-            
-            Log.d("XServerDisplayActivity", "Created steam_settings in " + dir.getAbsolutePath() + 
-                    " (user=" + accountName + ", id=" + accountSteamId + ", lang=" + language + 
+
+            // configs.main.ini - connectivity and overlay
+            boolean isOfflineMode = "true".equals(container.getExtra("steamOfflineMode", "false"));
+            StringBuilder mainIniBuilder = new StringBuilder();
+            mainIniBuilder.append("[main::connectivity]\n");
+            mainIniBuilder.append("disable_lan_only=").append(isOfflineMode ? "0" : "1").append("\n");
+            if (isOfflineMode) {
+                mainIniBuilder.append("offline=1\n");
+            }
+            mainIniBuilder.append("[main::general]\n");
+            mainIniBuilder.append("enable_overlay=0\n");
+            FileUtils.writeString(new File(settingsDir, "configs.main.ini"), mainIniBuilder.toString());
+
+            // configs.app.ini - DLC settings and cloud saves
+            StringBuilder appIni = new StringBuilder();
+            appIni.append("[app::dlcs]\n");
+            appIni.append("unlock_all=1\n\n");
+            appIni.append("[app::cloud_save::general]\n");
+            appIni.append("create_default_dir=1\n");
+            appIni.append("create_specific_dirs=1\n");
+            FileUtils.writeString(new File(settingsDir, "configs.app.ini"), appIni.toString());
+
+            // supported_languages.txt
+            String supportedLanguages = "arabic\nbulgarian\nschinese\ntchinese\nczech\ndanish\ndutch\n" +
+                    "english\nfinnish\nfrench\ngerman\ngreek\nhungarian\nitalian\njapanese\nkoreana\n" +
+                    "norwegian\npolish\nportuguese\nbrazilian\nromanian\nrussian\nspanish\nlatam\n" +
+                    "swedish\nthai\nturkish\nukrainian\nvietnamese\n";
+            FileUtils.writeString(new File(settingsDir, "supported_languages.txt"), supportedLanguages);
+
+            Log.d("XServerDisplayActivity", "Created steam_settings in " + dir.getAbsolutePath() +
+                    " (user=" + accountName + ", id=" + accountSteamId + ", lang=" + language +
                     ", ticket=" + (ticketBase64 != null ? "yes" : "no") + ")");
         }
         
@@ -3030,50 +3357,16 @@ public class XServerDisplayActivity extends AppCompatActivity {
      */
     private void generateSteamInterfacesFile(File dir, String dllName) {
         File interfacesFile = new File(dir, "steam_interfaces.txt");
-        if (interfacesFile.exists()) return; // Already generated
-        
-        // Look for the .original backup
-        File originalDll = new File(dir, dllName + ".original");
-        if (!originalDll.exists()) return;
-        
-        try {
-            byte[] bytes = java.nio.file.Files.readAllBytes(originalDll.toPath());
-            java.util.TreeSet<String> interfaces = new java.util.TreeSet<>();
-            
-            StringBuilder sb = new StringBuilder();
-            for (byte b : bytes) {
-                int ch = b & 0xFF;
-                if (ch >= 0x20 && ch <= 0x7E) {
-                    sb.append((char) ch);
-                } else {
-                    if (sb.length() >= 10) {
-                        String candidate = sb.toString();
-                        if (candidate.matches("^Steam[A-Za-z]+[0-9]{3}$")) {
-                            interfaces.add(candidate);
-                        }
-                    }
-                    sb.setLength(0);
-                }
-            }
-            // Flush final string
-            if (sb.length() >= 10) {
-                String candidate = sb.toString();
-                if (candidate.matches("^Steam[A-Za-z]+[0-9]{3}$")) {
-                    interfaces.add(candidate);
-                }
-            }
-            
-            if (!interfaces.isEmpty()) {
-                StringBuilder content = new StringBuilder();
-                for (String iface : interfaces) {
-                    content.append(iface).append("\n");
-                }
-                FileUtils.writeString(interfacesFile, content.toString());
-                Log.d("XServerDisplayActivity", "Generated steam_interfaces.txt with " + interfaces.size() + " interfaces");
-            }
-        } catch (Exception e) {
-            Log.w("XServerDisplayActivity", "Failed to generate steam_interfaces.txt", e);
+        if (interfacesFile.exists()) return;
+
+        // Try .original backup first (has the real interfaces), then the DLL itself
+        File dllToScan = new File(dir, dllName + ".original");
+        if (!dllToScan.exists()) {
+            dllToScan = new File(dir, dllName);
         }
+        if (!dllToScan.exists()) return;
+
+        generateSteamInterfacesFromDll(dir, dllToScan);
     }
     
     /**
@@ -3086,18 +3379,18 @@ public class XServerDisplayActivity extends AppCompatActivity {
             File winePrefix = container.getRootDir();
             File steamDir = new File(winePrefix, ".wine/drive_c/Program Files (x86)/Steam");
             steamDir.mkdirs();
-            
+
             // Create steam.cfg to prevent Steam bootstrap/update
             File steamCfg = new File(steamDir, "steam.cfg");
             if (!steamCfg.exists()) {
                 FileUtils.writeString(steamCfg, "BootStrapperInhibitAll=Enable\nBootStrapperForceSelfUpdate=False\n");
             }
-            
+
             // Create steamapps/common directory and symlink
             File steamappsDir = new File(steamDir, "steamapps");
             File commonDir = new File(steamappsDir, "common");
             commonDir.mkdirs();
-            
+
             String gameName = gameDir.getName();
             File steamGameLink = new File(commonDir, gameName);
             if (!steamGameLink.exists()) {
@@ -3106,10 +3399,30 @@ public class XServerDisplayActivity extends AppCompatActivity {
                             steamGameLink.toPath(), gameDir.toPath());
                     Log.d("XServerDisplayActivity", "Created symlink: " + steamGameLink + " -> " + gameDir);
                 } catch (Exception e) {
-                    Log.w("XServerDisplayActivity", "Failed to create symlink, copying instead", e);
+                    Log.w("XServerDisplayActivity", "Failed to create Steam game symlink", e);
                 }
             }
-            
+
+            // Create Steamworks Shared / _CommonRedist symlink
+            File steamworksSharedDir = new File(commonDir, "Steamworks Shared");
+            if (!steamworksSharedDir.exists()) {
+                steamworksSharedDir.mkdirs();
+            }
+            File gameCommonRedist = new File(gameDir, "_CommonRedist");
+            File steamworksCommonRedist = new File(steamworksSharedDir, "_CommonRedist");
+            if (!steamworksCommonRedist.exists()) {
+                if (gameCommonRedist.exists() && gameCommonRedist.isDirectory()) {
+                    try {
+                        java.nio.file.Files.createSymbolicLink(
+                                steamworksCommonRedist.toPath(), gameCommonRedist.toPath());
+                    } catch (Exception e) {
+                        Log.w("XServerDisplayActivity", "Failed to create _CommonRedist symlink", e);
+                    }
+                } else {
+                    gameCommonRedist.mkdirs();
+                }
+            }
+
             // Create ACF manifest so Steam sees the game as installed
             String acfContent = "\"AppState\"\n" +
                     "{\n" +
@@ -3119,51 +3432,208 @@ public class XServerDisplayActivity extends AppCompatActivity {
                     "\t\"StateFlags\"\t\t\"4\"\n" +
                     "\t\"installdir\"\t\t\"" + gameName + "\"\n" +
                     "\t\"LastUpdated\"\t\t\"" + (System.currentTimeMillis() / 1000) + "\"\n" +
+                    "\t\"SizeOnDisk\"\t\t\"0\"\n" +
                     "\t\"BytesToDownload\"\t\t\"0\"\n" +
                     "\t\"BytesDownloaded\"\t\t\"0\"\n" +
                     "\t\"AutoUpdateBehavior\"\t\t\"0\"\n" +
+                    "\t\"AllowOtherDownloadsWhileRunning\"\t\t\"0\"\n" +
+                    "\t\"ScheduledAutoUpdate\"\t\t\"0\"\n" +
                     "}\n";
             FileUtils.writeString(new File(steamappsDir, "appmanifest_" + appId + ".acf"), acfContent);
-            
+
+            // Create Steamworks Common Redistributables ACF
+            File steamworksAcf = new File(steamappsDir, "appmanifest_228980.acf");
+            if (!steamworksAcf.exists()) {
+                String steamworksAcfContent = "\"AppState\"\n" +
+                        "{\n" +
+                        "\t\"appid\"\t\t\"228980\"\n" +
+                        "\t\"Universe\"\t\t\"1\"\n" +
+                        "\t\"name\"\t\t\"Steamworks Common Redistributables\"\n" +
+                        "\t\"StateFlags\"\t\t\"4\"\n" +
+                        "\t\"installdir\"\t\t\"Steamworks Shared\"\n" +
+                        "\t\"buildid\"\t\t\"1\"\n" +
+                        "\t\"BytesToDownload\"\t\t\"0\"\n" +
+                        "\t\"BytesDownloaded\"\t\t\"0\"\n" +
+                        "}\n";
+                FileUtils.writeString(steamworksAcf, steamworksAcfContent);
+            }
+
             // Set up Wine registry for Steam paths
+            android.content.SharedPreferences prefs = getSharedPreferences("PluviaPreferences", MODE_PRIVATE);
+            String accountName = prefs.getString("user_name", "Player");
+            long steamIdLong = prefs.getLong("steam_user_steam_id_64", 0L);
+            String steamId64 = steamIdLong > 0 ? String.valueOf(steamIdLong) : "76561198000000000";
+
             File userReg = new File(winePrefix, ".wine/user.reg");
             if (userReg.exists()) {
-                try {
-                    WineRegistryEditor reg = new WineRegistryEditor(userReg);
-                    reg.setStringValue("Software\\Valve\\Steam", "AutoLoginUser", 
-                            getSharedPreferences("PluviaPreferences", MODE_PRIVATE).getString("user_name", "Player"));
-                    reg.setStringValue("Software\\Valve\\Steam", "SteamExe", 
-                            "C:\\Program Files (x86)\\Steam\\steam.exe");
-                    reg.setStringValue("Software\\Valve\\Steam", "SteamPath", 
-                            "C:\\Program Files (x86)\\Steam");
-                    reg.setStringValue("Software\\Valve\\Steam", "InstallPath", 
-                            "C:\\Program Files (x86)\\Steam");
-                    reg.close();
+                try (WineRegistryEditor reg = new WineRegistryEditor(userReg)) {
+                    String steamRoot = "C:\\Program Files (x86)\\Steam";
+                    String steamExe = steamRoot + "\\steam.exe";
+                    reg.setStringValue("Software\\Valve\\Steam", "AutoLoginUser", accountName);
+                    reg.setStringValue("Software\\Valve\\Steam", "SteamExe", steamExe);
+                    reg.setStringValue("Software\\Valve\\Steam", "SteamPath", steamRoot);
+                    reg.setStringValue("Software\\Valve\\Steam", "InstallPath", steamRoot);
                     Log.d("XServerDisplayActivity", "Set Steam registry entries");
                 } catch (Exception e) {
                     Log.w("XServerDisplayActivity", "Failed to set Steam registry entries", e);
                 }
             }
-            
-            // Create config/loginusers.vdf
-            android.content.SharedPreferences prefs = getSharedPreferences("PluviaPreferences", MODE_PRIVATE);
-            String accountName = prefs.getString("user_name", "Player");
-            long steamIdLong = prefs.getLong("steam_user_steam_id_64", 0L);
-            String steamId64 = steamIdLong > 0 ? String.valueOf(steamIdLong) : "76561198000000000";
+
+            // Skip first-time redistributable setup by marking them installed in system.reg
+            skipFirstTimeSteamSetup(winePrefix);
+
+            // Create config/loginusers.vdf with full auth fields
             File configDir = new File(steamDir, "config");
             configDir.mkdirs();
+            long epoch = System.currentTimeMillis() / 1000;
             String loginVdf = "\"users\"\n{\n\t\"" + steamId64 + "\"\n\t{\n" +
                     "\t\t\"AccountName\"\t\t\"" + accountName + "\"\n" +
                     "\t\t\"PersonaName\"\t\t\"" + accountName + "\"\n" +
-                    "\t\t\"MostRecent\"\t\t\"1\"\n" +
                     "\t\t\"RememberPassword\"\t\t\"1\"\n" +
-                    "\t\t\"Timestamp\"\t\t\"" + (System.currentTimeMillis() / 1000) + "\"\n" +
+                    "\t\t\"WantsOfflineMode\"\t\t\"0\"\n" +
+                    "\t\t\"SkipOfflineModeWarning\"\t\t\"0\"\n" +
+                    "\t\t\"AllowAutoLogin\"\t\t\"1\"\n" +
+                    "\t\t\"MostRecent\"\t\t\"1\"\n" +
+                    "\t\t\"Timestamp\"\t\t\"" + epoch + "\"\n" +
                     "\t}\n}\n";
             FileUtils.writeString(new File(configDir, "loginusers.vdf"), loginVdf);
-            
-            Log.d("XServerDisplayActivity", "Steam environment setup complete");
+
+            // Set up config.vdf with encrypted ConnectCache token for Steam auto-login
+            setupSteamConfigVdf(steamId64, accountName);
+
+            // Create lightweight Steam config to reduce resource usage
+            setupLightweightSteamConfig(steamDir, steamId64);
+
+            Log.d("XServerDisplayActivity", "Steam environment setup complete for appId=" + appId);
         } catch (Exception e) {
             Log.e("XServerDisplayActivity", "Failed to setup Steam environment", e);
+        }
+    }
+
+    /**
+     * Creates lightweight Steam configuration files to reduce resource usage.
+     * Disables community content, friends, and enables small mode.
+     */
+    private void setupLightweightSteamConfig(File steamDir, String steamId64) {
+        try {
+            File userDataPath = new File(steamDir, "userdata/" + steamId64);
+            File configPath = new File(userDataPath, "config");
+            File remotePath = new File(userDataPath, "7/remote");
+            configPath.mkdirs();
+            remotePath.mkdirs();
+
+            File localConfigFile = new File(configPath, "localconfig.vdf");
+            if (!localConfigFile.exists()) {
+                String localConfigContent = "\"UserLocalConfigStore\"\n" +
+                        "{\n" +
+                        "  \"Software\"\n" +
+                        "  {\n" +
+                        "    \"Valve\"\n" +
+                        "    {\n" +
+                        "      \"Steam\"\n" +
+                        "      {\n" +
+                        "        \"SmallMode\"                      \"1\"\n" +
+                        "        \"LibraryDisableCommunityContent\" \"1\"\n" +
+                        "        \"LibraryLowBandwidthMode\"        \"1\"\n" +
+                        "        \"LibraryLowPerfMode\"             \"1\"\n" +
+                        "      }\n" +
+                        "    }\n" +
+                        "  }\n" +
+                        "  \"friends\"\n" +
+                        "  {\n" +
+                        "    \"SignIntoFriends\" \"0\"\n" +
+                        "  }\n" +
+                        "}\n";
+                FileUtils.writeString(localConfigFile, localConfigContent);
+            }
+
+            File sharedConfigFile = new File(remotePath, "sharedconfig.vdf");
+            if (!sharedConfigFile.exists()) {
+                String sharedConfigContent = "\"UserRoamingConfigStore\"\n" +
+                        "{\n" +
+                        "  \"Software\"\n" +
+                        "  {\n" +
+                        "    \"Valve\"\n" +
+                        "    {\n" +
+                        "      \"Steam\"\n" +
+                        "      {\n" +
+                        "        \"SteamDefaultDialog\" \"#app_games\"\n" +
+                        "        \"FriendsUI\"\n" +
+                        "        {\n" +
+                        "          \"FriendsUIJSON\" \"{\\\"bSignIntoFriends\\\":false,\\\"bAnimatedAvatars\\\":false,\\\"PersonaNotifications\\\":0,\\\"bDisableRoomEffects\\\":true}\"\n" +
+                        "        }\n" +
+                        "      }\n" +
+                        "    }\n" +
+                        "  }\n" +
+                        "}\n";
+                FileUtils.writeString(sharedConfigFile, sharedConfigContent);
+            }
+        } catch (Exception e) {
+            Log.w("XServerDisplayActivity", "Failed to setup lightweight Steam configuration", e);
+        }
+    }
+
+    /**
+     * Sets up config.vdf with encrypted ConnectCache token for Steam auto-login.
+     * Uses SteamTokenLogin to create the obfuscated config that prevents sign-outs.
+     */
+    private void setupSteamConfigVdf(String steamId64, String accountName) {
+        try {
+            String refreshToken = com.winlator.cmod.steam.utils.PrefManager.INSTANCE.getRefreshToken();
+            if (refreshToken != null && !refreshToken.isEmpty()) {
+                com.winlator.cmod.steam.utils.SteamTokenLogin tokenLogin =
+                        new com.winlator.cmod.steam.utils.SteamTokenLogin(
+                                steamId64, accountName, refreshToken, imageFs, null);
+                tokenLogin.setupSteamFiles();
+                Log.d("XServerDisplayActivity", "Steam config.vdf with ConnectCache token set up");
+            } else {
+                Log.d("XServerDisplayActivity", "No refresh token available, skipping config.vdf token setup");
+            }
+        } catch (Exception e) {
+            Log.w("XServerDisplayActivity", "Failed to set up Steam config.vdf", e);
+        }
+    }
+
+    /**
+     * Marks common redistributables (DirectX, .NET, XNA, OpenAL) as already installed
+     * in the system registry to prevent games from running first-time setup that would fail.
+     */
+    private void skipFirstTimeSteamSetup(File containerDir) {
+        File systemRegFile = new File(containerDir, ".wine/system.reg");
+        if (!systemRegFile.exists()) return;
+
+        String[][] redistributables = {
+            {"DirectX\\Jun2010", "DXSetup"},
+            {".NET\\3.5", "3.5 SP1"},
+            {".NET\\3.5 Client Profile", "3.5 Client Profile SP1"},
+            {".NET\\4.0", "4.0"},
+            {".NET\\4.0 Client Profile", "4.0 Client Profile"},
+            {".NET\\4.5.1", "4.5.1"},
+            {".NET\\4.5.2", "4.5.2"},
+            {".NET\\4.6", "4.6"},
+            {".NET\\4.6.1", "4.6.1"},
+            {".NET\\4.6.2", "4.6.2"},
+            {".NET\\4.7", "4.7"},
+            {".NET\\4.7.1", "4.7.1"},
+            {".NET\\4.7.2", "4.7.2"},
+            {".NET\\4.8", "4.8"},
+            {".NET\\4.8.1", "4.8.1"},
+            {"XNA\\3.0", "3.0"},
+            {"XNA\\3.1", "3.1"},
+            {"XNA\\4.0", "4.0"},
+            {"OpenAL\\2.0.7.0", "2.0.7.0"},
+        };
+
+        try (WineRegistryEditor reg = new WineRegistryEditor(systemRegFile)) {
+            for (String[] entry : redistributables) {
+                String regPath = "Software\\Valve\\Steam\\Apps\\CommonRedist\\" + entry[0];
+                String regPathWow = "Software\\Wow6432Node\\Valve\\Steam\\Apps\\CommonRedist\\" + entry[0];
+                reg.setDwordValue(regPath, entry[1], 1);
+                reg.setDwordValue(regPathWow, entry[1], 1);
+            }
+            Log.d("XServerDisplayActivity", "Marked " + redistributables.length + " redistributables as installed");
+        } catch (Exception e) {
+            Log.w("XServerDisplayActivity", "Failed to set redistributable registry entries", e);
         }
     }
 

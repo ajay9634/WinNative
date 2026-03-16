@@ -25,6 +25,19 @@ public class SteamBridge {
         }
     }
 
+    public static String getInstalledExe(int appId) {
+        try {
+            Class<?> companion = Class.forName("com.winlator.cmod.steam.service.SteamService$Companion");
+            Object instance = Class.forName("com.winlator.cmod.steam.service.SteamService")
+                    .getField("Companion").get(null);
+            Method method = companion.getMethod("getInstalledExe", int.class);
+            return (String) method.invoke(instance, appId);
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to call SteamService.getInstalledExe", e);
+            return "";
+        }
+    }
+
     public static boolean extractSteam(Context context) {
         try {
             Class<?> clazz = Class.forName("com.winlator.cmod.steam.SteamClientManager");
