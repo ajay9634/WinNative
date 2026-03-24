@@ -67,10 +67,16 @@ android {
 
     signingConfigs {
         release {
-            storeFile file("/home/max/Documents/winnative_release.jks")
-            storePassword "316402"
-            keyAlias "winnative"
-            keyPassword "316402"
+            def props = new Properties()
+            def propsFile = rootProject.file('signing.properties')
+            if (propsFile.exists()) {
+                props.load(new FileInputStream(propsFile))
+            }
+
+            storeFile rootProject.file(System.getenv("KEYSTORE_FILE") ?: props.getProperty("storeFile", ""))
+            storePassword System.getenv("KEYSTORE_PASSWORD") ?: props.getProperty("storePassword", "")
+            keyAlias System.getenv("KEY_ALIAS") ?: props.getProperty("keyAlias", "")
+            keyPassword System.getenv("KEY_PASSWORD") ?: props.getProperty("keyPassword", "")
         }
     }
 
