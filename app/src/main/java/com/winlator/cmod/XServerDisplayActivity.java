@@ -3442,6 +3442,14 @@ public class XServerDisplayActivity extends AppCompatActivity {
     private void mountADriveOnContainer(Container c, String gamePath) {
         // P4: Ephemeral approach — create/update the dosdevices symlink directly
         // instead of persisting to container.setDrives() + container.saveData()
+        if (gamePath == null || gamePath.isEmpty()) {
+            Log.e("XServerDisplayActivity", "mountADriveOnContainer: gamePath is null/empty, skipping");
+            return;
+        }
+        File gameDir = new File(gamePath);
+        if (!gameDir.exists()) {
+            Log.e("XServerDisplayActivity", "mountADriveOnContainer: gamePath does not exist: " + gamePath);
+        }
         try {
             File dosdevices = new File(c.getRootDir(), ".wine/dosdevices");
             dosdevices.mkdirs();
@@ -3449,8 +3457,12 @@ public class XServerDisplayActivity extends AppCompatActivity {
             if (aLink.exists()) {
                 aLink.delete();
             }
-            java.nio.file.Files.createSymbolicLink(aLink.toPath(), new File(gamePath).toPath());
-            Log.d("XServerDisplayActivity", "Ephemeral A: drive symlink: " + aLink + " -> " + gamePath);
+            java.nio.file.Files.createSymbolicLink(aLink.toPath(), gameDir.toPath());
+
+            // Verify the symlink was created and resolves correctly
+            boolean linkOk = java.nio.file.Files.isSymbolicLink(aLink.toPath());
+            Log.d("XServerDisplayActivity", "Ephemeral A: drive symlink: " + aLink + " -> " + gamePath
+                    + " (valid=" + linkOk + ", target_exists=" + gameDir.exists() + ")");
 
             // Also update in-memory drives for binding paths (but do NOT saveData)
             String currentDrives = c.getDrives() != null ? c.getDrives() : Container.DEFAULT_DRIVES;
@@ -3462,6 +3474,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
             }
             sb.append("A:").append(gamePath);
             c.setDrives(sb.toString());
+            Log.d("XServerDisplayActivity", "In-memory drives updated with A: drive, total: " + sb);
             // NOTE: intentionally NOT calling c.saveData() — ephemeral per-launch only
         } catch (Exception e) {
             Log.e("XServerDisplayActivity", "Failed to create ephemeral A: drive symlink", e);
