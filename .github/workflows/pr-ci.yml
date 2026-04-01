@@ -95,14 +95,21 @@ jobs:
       id: sha
       run: echo "short=$(echo $GITHUB_SHA | cut -c1-7)" >> "$GITHUB_OUTPUT"
 
-    - name: Upload APKs
+    - name: Upload Standard APK
       if: github.event_name == 'pull_request' || github.event_name == 'push'
       uses: actions/upload-artifact@v4
       with:
-        name: WinNative-debug-${{ github.event_name == 'pull_request' && format('PR{0}', github.event.pull_request.number) || 'main' }}-${{ steps.sha.outputs.short }}
-        path: |
-          app/build/outputs/apk/standard/debug/standard.apk
-          app/build/outputs/apk/ludashi/debug/ludashi.apk
+        name: WinNative-Standard-debug-${{ github.event_name == 'pull_request' && format('PR{0}', github.event.pull_request.number) || 'main' }}-${{ steps.sha.outputs.short }}
+        path: app/build/outputs/apk/standard/debug/standard.apk
+        retention-days: 7
+        compression-level: 0
+
+    - name: Upload Ludashi APK
+      if: github.event_name == 'pull_request' || github.event_name == 'push'
+      uses: actions/upload-artifact@v4
+      with:
+        name: WinNative-Ludashi-debug-${{ github.event_name == 'pull_request' && format('PR{0}', github.event.pull_request.number) || 'main' }}-${{ steps.sha.outputs.short }}
+        path: app/build/outputs/apk/ludashi/debug/ludashi.apk
         retention-days: 7
         compression-level: 0
 
