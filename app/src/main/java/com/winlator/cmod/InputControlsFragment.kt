@@ -143,10 +143,20 @@ class InputControlsFragment(private val selectedProfileId: Int) : Fragment() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         if (requestCode == MainActivity.OPEN_FILE_REQUEST_CODE.toInt() && resultCode == Activity.RESULT_OK) {
             try {
-                val imported = manager.importProfile(JSONObject(FileUtils.readString(requireContext(), data?.data)))
-                importProfileCallback?.invoke(imported)
+                val jsonString = FileUtils.readString(requireContext(), data?.data)
+                if (jsonString.isNullOrBlank()) {
+                    AppUtils.showToast(requireContext(), getString(R.string.input_controls_editor_unable_to_import) + ": Empty file")
+                } else {
+                    val imported = manager.importProfile(JSONObject(jsonString))
+                    if (imported != null) {
+                        importProfileCallback?.invoke(imported)
+                    } else {
+                        AppUtils.showToast(requireContext(), getString(R.string.input_controls_editor_unable_to_import) + ": Invalid profile data")
+                    }
+                }
             } catch (e: Exception) {
-                AppUtils.showToast(requireContext(), R.string.input_controls_editor_unable_to_import)
+                Log.e(TAG, "Error importing profile", e)
+                AppUtils.showToast(requireContext(), getString(R.string.input_controls_editor_unable_to_import) + ": " + e.message)
             }
             importProfileCallback = null
         }

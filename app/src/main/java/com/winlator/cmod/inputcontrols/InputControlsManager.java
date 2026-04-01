@@ -170,12 +170,20 @@ public class InputControlsManager {
 
     public ControlsProfile importProfile(JSONObject data) {
         try {
-            if (!data.has("id") || !data.has("name")) return null;
+            if (!data.has("name")) {
+                Log.e("ICManager", "importProfile: data missing 'name' field: " + data.toString());
+                return null;
+            }
             int newId = ++maxProfileId;
             File newFile = ControlsProfile.getProfileFile(context, newId);
             data.put("id", newId);
             FileUtils.writeString(newFile, data.toString());
             ControlsProfile newProfile = loadProfile(context, newFile);
+
+            if (newProfile == null) {
+                Log.e("ICManager", "importProfile: loadProfile returned null for " + newFile.getPath());
+                return null;
+            }
 
             int foundIndex = -1;
             for (int i = 0; i < profiles.size(); i++) {
@@ -193,6 +201,7 @@ public class InputControlsManager {
             return newProfile;
         }
         catch (JSONException e) {
+            Log.e("ICManager", "importProfile: JSONException", e);
             return null;
         }
     }
@@ -252,6 +261,7 @@ public class InputControlsManager {
             }
 
             ControlsProfile profile = new ControlsProfile(context, profileId);
+            if (profileName == null) return null;
             profile.setName(profileName);
             profile.setCursorSpeed(cursorSpeed);
             return profile;
