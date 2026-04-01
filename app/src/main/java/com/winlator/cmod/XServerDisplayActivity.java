@@ -34,6 +34,9 @@ import android.widget.FrameLayout;
 import android.widget.Spinner;
 import android.widget.TextView;
 
+import org.json.JSONException;
+import org.json.JSONObject;
+
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
@@ -219,6 +222,9 @@ public class XServerDisplayActivity extends AppCompatActivity {
     private boolean isPaused = false;
     private boolean isRelativeMouseMovement = false;
     private boolean isNativeRenderingEnabled = true;
+
+    private float hudTransparency = 1.0f;
+    private boolean[] hudElements = new boolean[]{true, true, true, true, true, true};
 
     // Inside the XServerDisplayActivity class
     private SensorManager sensorManager;
@@ -555,6 +561,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
         String screenSize = Container.DEFAULT_SCREEN_SIZE;
         containerManager = new ContainerManager(this);
         container = containerManager.getContainerById(getIntent().getIntExtra("container_id", 0));
+        loadHUDSettings();
 
         // Determine launch target from intent extras and URI fallback.
         int containerId = getIntent().getIntExtra("container_id", 0);
@@ -1830,14 +1837,83 @@ public class XServerDisplayActivity extends AppCompatActivity {
                 enableLogsMenu,
                 isNativeRenderingEnabled,
                 getString(R.string.session_xserver_native_rendering),
-                getString(isNativeRenderingEnabled ? R.string.session_xserver_native_rendering_enabled : R.string.session_xserver_native_rendering_disabled)
+                getString(isNativeRenderingEnabled ? R.string.session_xserver_native_rendering_enabled : R.string.session_xserver_native_rendering_disabled),
+                hudTransparency,
+                hudElements
         );
         XServerDrawerMenuKt.setupXServerDrawerComposeView(
                 navigationComposeView,
                 state,
                 this,
-                itemId -> handleDrawerAction(itemId)
+                new XServerDrawerActionListener() {
+                    @Override
+                    public void onActionSelected(int itemId) {
+                        handleDrawerAction(itemId);
+                    }
+
+                    @Override
+                    public void onHUDElementToggled(int index, boolean enabled) {
+                        hudElements[index] = enabled;
+                        if (frameRating != null) frameRating.toggleElement(index, enabled);
+                        saveHUDSettings();
+                        renderDrawerMenu();
+                    }
+
+                    @Override
+                    public void onHUDTransparencyChanged(float transparency) {
+                        hudTransparency = transparency;
+                        if (frameRating != null) frameRating.setHudAlpha(transparency);
+                        saveHUDSettings();
+                        renderDrawerMenu();
+                    }
+                }
         );
+    }
+
+    private void loadHUDSettings() {
+        if (container == null) return;
+        String json = container.getExtra("hudSettings");
+        if (json != null && !json.isEmpty()) {
+            try {
+                JSONObject obj = new JSONObject(json);
+                hudTransparency = (float) obj.optDouble("transparency", 1.0);
+                hudElements[0] = obj.optBoolean("showFPS", true);
+                hudElements[1] = obj.optBoolean("showRenderer", true);
+                hudElements[2] = obj.optBoolean("showGPU", true);
+                hudElements[3] = obj.optBoolean("showCpuRam", true);
+                hudElements[4] = obj.optBoolean("showBattTemp", true);
+                hudElements[5] = obj.optBoolean("showGraph", true);
+            } catch (JSONException e) {
+                Log.e("XServerDisplayActivity", "Failed to load HUD settings", e);
+            }
+        }
+    }
+
+    private void saveHUDSettings() {
+        if (container == null) return;
+        try {
+            JSONObject obj = new JSONObject();
+            obj.put("transparency", hudTransparency);
+            obj.put("showFPS", hudElements[0]);
+            obj.put("showRenderer", hudElements[1]);
+            obj.put("showGPU", hudElements[2]);
+            obj.put("showCpuRam", hudElements[3]);
+            obj.put("showBattTemp", hudElements[4]);
+            obj.put("showGraph", hudElements[5]);
+            container.putExtra("hudSettings", obj.toString());
+            container.saveData();
+        } catch (JSONException e) {
+            Log.e("XServerDisplayActivity", "Failed to save HUD settings", e);
+        }
+    }
+
+    private void applyHUDSettings() {
+        if (frameRating != null) {
+            frameRating.setHudAlpha(hudTransparency);
+            for (int i = 0; i < hudElements.length; i++) {
+                frameRating.toggleElement(i, hudElements[i]);
+            }
+        }
     }
 
     @SuppressLint("SourceLockedOrientationActivity")
@@ -1857,12 +1933,16 @@ public class XServerDisplayActivity extends AppCompatActivity {
                     frameRating.setRenderer(lastRendererName);
                     if (lastGpuName != null) frameRating.setGpuName(lastGpuName);
                     frameRating.setVisibility(View.GONE);
+                    applyHUDSettings();
                     rootView.addView(frameRating);
                 }
                 boolean isFpsVisible = frameRating.getVisibility() == View.VISIBLE;
                 boolean becomingVisible = !isFpsVisible;
                 frameRating.setVisibility(becomingVisible ? View.VISIBLE : View.GONE);
-                if (becomingVisible) syncFrameRatingWithExistingWindows();
+                if (becomingVisible) {
+                    syncFrameRatingWithExistingWindows();
+                    applyHUDSettings();
+                }
                 
                 if (container != null) {
                     container.setShowFPS(becomingVisible);

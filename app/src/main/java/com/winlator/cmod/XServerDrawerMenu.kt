@@ -43,6 +43,13 @@ import androidx.compose.material3.Icon
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 
+import androidx.compose.material3.Slider
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
+import androidx.compose.material3.SliderDefaults
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.fillMaxHeight
+
 data class XServerDrawerItem(
     val itemId: Int,
     val title: String,
@@ -53,10 +60,14 @@ data class XServerDrawerItem(
 
 data class XServerDrawerState(
     val items: List<XServerDrawerItem>,
+    val hudTransparency: Float = 1.0f,
+    val hudElements: BooleanArray = booleanArrayOf(true, true, true, true, true, true),
 )
 
-fun interface XServerDrawerActionListener {
+interface XServerDrawerActionListener {
     fun onActionSelected(itemId: Int)
+    fun onHUDElementToggled(index: Int, enabled: Boolean)
+    fun onHUDTransparencyChanged(transparency: Float)
 }
 
 fun buildXServerDrawerState(
@@ -70,6 +81,8 @@ fun buildXServerDrawerState(
     nativeRenderingEnabled: Boolean,
     nativeRenderingTitle: String,
     nativeRenderingSubtitle: String,
+    hudTransparency: Float = 1.0f,
+    hudElements: BooleanArray = booleanArrayOf(true, true, true, true, true, true),
 ): XServerDrawerState {
     val items = mutableListOf(
         XServerDrawerItem(
@@ -170,7 +183,7 @@ fun buildXServerDrawerState(
         iconRes = R.drawable.icon_exit,
     )
 
-    return XServerDrawerState(items)
+    return XServerDrawerState(items, hudTransparency, hudElements)
 }
 
 fun setupXServerDrawerComposeView(
@@ -189,7 +202,7 @@ fun setupXServerDrawerComposeView(
                 onSurface = Color(0xFFE6EDF3),
             )
         ) {
-            XServerDrawerContent(state = state, onActionSelected = listener::onActionSelected)
+            XServerDrawerContent(state = state, listener = listener)
         }
     }
 }
@@ -197,7 +210,7 @@ fun setupXServerDrawerComposeView(
 @Composable
 private fun XServerDrawerContent(
     state: XServerDrawerState,
-    onActionSelected: (Int) -> Unit,
+    listener: XServerDrawerActionListener,
 ) {
     Surface(
         modifier = Modifier
@@ -215,9 +228,119 @@ private fun XServerDrawerContent(
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             state.items.forEach { item ->
-                XServerDrawerRow(item = item, onClick = { onActionSelected(item.itemId) })
+                XServerDrawerRow(item = item, onClick = { listener.onActionSelected(item.itemId) })
+                if (item.itemId == R.id.main_menu_fps_monitor && item.active) {
+                    XServerHUDSettingsExpanded(state, listener)
+                }
             }
         }
+    }
+}
+
+@Composable
+private fun XServerHUDSettingsExpanded(
+    state: XServerDrawerState,
+    listener: XServerDrawerActionListener,
+) {
+    val card = Color(0xFF1C2333)
+    val accent = Color(0xFF2F81F7)
+    val textSecondary = Color(0xFF8B949E)
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .background(card)
+            .padding(12.dp)
+    ) {
+        // Transparency Slider
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Alpha ${(state.hudTransparency * 100).toInt()}%",
+                color = textSecondary,
+                fontSize = 11.sp,
+                modifier = Modifier.width(70.dp)
+            )
+            Slider(
+                value = state.hudTransparency,
+                onValueChange = { listener.onHUDTransparencyChanged(it) },
+                valueRange = 0.1f..1f,
+                modifier = Modifier.weight(1f),
+                colors = SliderDefaults.colors(
+                    thumbColor = accent,
+                    activeTrackColor = accent,
+                    inactiveTrackColor = accent.copy(alpha = 0.24f)
+                )
+            )
+        }
+
+        Spacer(Modifier.height(8.dp))
+
+        // Toggles Grid (3 columns, 2 rows)
+        val elementNames = listOf("FPS", "API", "GPU", "CPU", "BAT", "Graph")
+        
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            for (row in 0..1) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    for (col in 0..2) {
+                        val index = row * 3 + col
+                        if (index < elementNames.size) {
+                            HUDCheckmarkToggle(
+                                label = elementNames[index],
+                                checked = state.hudElements[index],
+                                onCheckedChange = { listener.onHUDElementToggled(index, it) },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun HUDCheckmarkToggle(
+    label: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val textPrimary = Color(0xFFE6EDF3)
+    val accent = Color(0xFF2F81F7)
+
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(8.dp))
+            .clickable { onCheckedChange(!checked) }
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Start
+    ) {
+        Checkbox(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            modifier = Modifier.size(24.dp),
+            colors = CheckboxDefaults.colors(
+                checkedColor = accent,
+                uncheckedColor = Color(0xFF30363D),
+                checkmarkColor = Color.White
+            )
+        )
+        Spacer(Modifier.width(4.dp))
+        Text(
+            text = label,
+            color = textPrimary,
+            fontSize = 11.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 
