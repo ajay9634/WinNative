@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -62,12 +61,14 @@ data class XServerDrawerState(
     val items: List<XServerDrawerItem>,
     val hudTransparency: Float = 1.0f,
     val hudElements: BooleanArray = booleanArrayOf(true, true, true, true, true, true),
+    val dualSeriesBatteryEnabled: Boolean = false,
 )
 
 interface XServerDrawerActionListener {
     fun onActionSelected(itemId: Int)
     fun onHUDElementToggled(index: Int, enabled: Boolean)
     fun onHUDTransparencyChanged(transparency: Float)
+    fun onDualSeriesBatteryChanged(enabled: Boolean)
 }
 
 fun buildXServerDrawerState(
@@ -83,6 +84,7 @@ fun buildXServerDrawerState(
     nativeRenderingSubtitle: String,
     hudTransparency: Float = 1.0f,
     hudElements: BooleanArray = booleanArrayOf(true, true, true, true, true, true),
+    dualSeriesBatteryEnabled: Boolean = false,
 ): XServerDrawerState {
     val items = mutableListOf(
         XServerDrawerItem(
@@ -183,7 +185,7 @@ fun buildXServerDrawerState(
         iconRes = R.drawable.icon_exit,
     )
 
-    return XServerDrawerState(items, hudTransparency, hudElements)
+    return XServerDrawerState(items, hudTransparency, hudElements, dualSeriesBatteryEnabled)
 }
 
 fun setupXServerDrawerComposeView(
@@ -302,6 +304,15 @@ private fun XServerHUDSettingsExpanded(
                 }
             }
         }
+
+        Spacer(Modifier.height(8.dp))
+
+        HUDCheckmarkToggle(
+            label = stringResource(R.string.session_drawer_dual_series_battery),
+            checked = state.dualSeriesBatteryEnabled,
+            onCheckedChange = listener::onDualSeriesBatteryChanged,
+            modifier = Modifier.fillMaxWidth()
+        )
     }
 }
 

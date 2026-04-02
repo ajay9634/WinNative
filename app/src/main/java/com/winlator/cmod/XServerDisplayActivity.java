@@ -225,6 +225,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
 
     private float hudTransparency = 1.0f;
     private boolean[] hudElements = new boolean[]{true, true, true, true, true, true};
+    private boolean dualSeriesBattery = false;
 
     // Inside the XServerDisplayActivity class
     private SensorManager sensorManager;
@@ -449,6 +450,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
         preloaderDialog = new PreloaderDialog(this);
 
         cursorLock = preferences.getBoolean("cursor_lock", false);
+        dualSeriesBattery = preferences.getBoolean(FrameRating.PREF_HUD_DUAL_SERIES_BATTERY, false);
 
         // Check for Dark Mode
         isDarkMode = preferences.getBoolean("dark_mode", false);
@@ -1839,7 +1841,8 @@ public class XServerDisplayActivity extends AppCompatActivity {
                 getString(R.string.session_xserver_native_rendering),
                 getString(isNativeRenderingEnabled ? R.string.session_xserver_native_rendering_enabled : R.string.session_xserver_native_rendering_disabled),
                 hudTransparency,
-                hudElements
+                hudElements,
+                dualSeriesBattery
         );
         XServerDrawerMenuKt.setupXServerDrawerComposeView(
                 navigationComposeView,
@@ -1864,6 +1867,14 @@ public class XServerDisplayActivity extends AppCompatActivity {
                         hudTransparency = transparency;
                         if (frameRating != null) frameRating.setHudAlpha(transparency);
                         saveHUDSettings();
+                        renderDrawerMenu();
+                    }
+
+                    @Override
+                    public void onDualSeriesBatteryChanged(boolean enabled) {
+                        dualSeriesBattery = enabled;
+                        preferences.edit().putBoolean(FrameRating.PREF_HUD_DUAL_SERIES_BATTERY, enabled).apply();
+                        if (frameRating != null) frameRating.setDualSeriesBattery(enabled);
                         renderDrawerMenu();
                     }
                 }
@@ -1910,6 +1921,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
     private void applyHUDSettings() {
         if (frameRating != null) {
             frameRating.setHudAlpha(hudTransparency);
+            frameRating.setDualSeriesBattery(dualSeriesBattery);
             for (int i = 0; i < hudElements.length; i++) {
                 frameRating.toggleElement(i, hudElements[i]);
             }

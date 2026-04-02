@@ -4,6 +4,7 @@ import android.app.ActivityManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.SharedPreferences;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
@@ -25,6 +26,8 @@ import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
+import androidx.preference.PreferenceManager;
+
 import com.winlator.cmod.R;
 import com.winlator.cmod.core.CPUStatus;
 
@@ -36,6 +39,11 @@ import java.util.Locale;
 
 public class FrameRating extends LinearLayout implements Runnable {
     private static final String TAG = "FrameRating";
+    public static final String PREF_HUD_DISPLAY_MODE = "hud_display_mode";
+    public static final String PREF_HUD_POS_X = "hud_position_x";
+    public static final String PREF_HUD_POS_Y = "hud_position_y";
+    public static final String PREF_HUD_HAS_POSITION = "hud_has_position";
+    public static final String PREF_HUD_DUAL_SERIES_BATTERY = "hud_dual_series_battery";
     private final int C_BAT;
     private final int C_CPU;
     private final int C_DIVISOR;
@@ -88,6 +96,7 @@ public class FrameRating extends LinearLayout implements Runnable {
     private HandlerThread statsThread;
     private Handler uiRefreshHandler;
     private Runnable uiRefreshRunnable;
+    private final SharedPreferences preferences;
 
     // ── GPU load caching (prevents N/A flickering from transient sysfs failures)
     private int lastGoodGpuLoad = -1;
@@ -102,6 +111,7 @@ public class FrameRating extends LinearLayout implements Runnable {
     private int displayMode = 0;
     private static final int MODE_COUNT = 4;
     private GradientDrawable backdropDrawable;
+    private boolean dualSeriesBattery;
 
     public FrameRating(Context context, HashMap graphicsDriverConfig) {
         this(context, graphicsDriverConfig, null);
@@ -151,6 +161,7 @@ public class FrameRating extends LinearLayout implements Runnable {
         this.C_FPS_OK = Color.parseColor("#76FF03");
         this.C_DIVISOR = Color.parseColor("#616161");
         this.context = context;
+        this.preferences = PreferenceManager.getDefaultSharedPreferences(context);
         this.batteryManager = (BatteryManager) context.getSystemService(Context.BATTERY_SERVICE);
         setOrientation(LinearLayout.HORIZONTAL);
         setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
@@ -185,6 +196,9 @@ public class FrameRating extends LinearLayout implements Runnable {
         this.backdropDrawable = new GradientDrawable();
         this.backdropDrawable.setColor(0x80000000); // 50% black
         this.backdropDrawable.setCornerRadius(8f);
+
+        loadPersistedHudPreferences();
+        applyDisplayMode();
 
         // Detect GPU name from sysfs on init
         if (this.gpuName == null) {
@@ -258,6 +272,7 @@ public class FrameRating extends LinearLayout implements Runnable {
         super.onAttachedToWindow();
         bringToFront();
         setElevation(1000.0f);
+        restorePersistedPosition();
         removeCallbacks(this);
         post(this);
         startStatsUpdate();
@@ -307,6 +322,7 @@ public class FrameRating extends LinearLayout implements Runnable {
                             if (this.isDragging) {
                                 view.setX(event.getRawX() + this.dX);
                                 view.setY(event.getRawY() + this.dY);
+                                clampToParentBounds(view);
                             }
                             return true;
                         }
@@ -318,6 +334,9 @@ public class FrameRating extends LinearLayout implements Runnable {
                             if (!this.isDragging && elapsed < 400) {
                                 // Short tap → cycle display mode
                                 cycleDisplayMode();
+                            } else if (this.isDragging) {
+                                clampToParentBounds(view);
+                                persistPosition(view.getX(), view.getY());
                             }
                             this.activePointerId = -1;
                             return true;
@@ -331,7 +350,47 @@ public class FrameRating extends LinearLayout implements Runnable {
 
     private void cycleDisplayMode() {
         displayMode = (displayMode + 1) % MODE_COUNT;
+        this.preferences.edit().putInt(PREF_HUD_DISPLAY_MODE, displayMode).apply();
         post(this::applyDisplayMode);
+    }
+
+    private void loadPersistedHudPreferences() {
+        this.displayMode = this.preferences.getInt(PREF_HUD_DISPLAY_MODE, 0);
+        this.dualSeriesBattery = this.preferences.getBoolean(PREF_HUD_DUAL_SERIES_BATTERY, false);
+    }
+
+    private void restorePersistedPosition() {
+        if (!this.preferences.getBoolean(PREF_HUD_HAS_POSITION, false)) {
+            return;
+        }
+        post(() -> {
+            setX(this.preferences.getFloat(PREF_HUD_POS_X, getX()));
+            setY(this.preferences.getFloat(PREF_HUD_POS_Y, getY()));
+            clampToParentBounds(this);
+        });
+    }
+
+    private void persistPosition(float x, float y) {
+        this.preferences.edit()
+                .putBoolean(PREF_HUD_HAS_POSITION, true)
+                .putFloat(PREF_HUD_POS_X, x)
+                .putFloat(PREF_HUD_POS_Y, y)
+                .apply();
+    }
+
+    private void clampToParentBounds(View view) {
+        View parentView = (View) view.getParent();
+        if (parentView == null) {
+            return;
+        }
+        if (parentView.getWidth() <= 0 || parentView.getHeight() <= 0 || view.getWidth() <= 0 || view.getHeight() <= 0) {
+            return;
+        }
+
+        float maxX = Math.max(0f, parentView.getWidth() - view.getWidth());
+        float maxY = Math.max(0f, parentView.getHeight() - view.getHeight());
+        view.setX(Math.max(0f, Math.min(view.getX(), maxX)));
+        view.setY(Math.max(0f, Math.min(view.getY(), maxY)));
     }
 
     private void applyDisplayMode() {
@@ -511,6 +570,12 @@ public class FrameRating extends LinearLayout implements Runnable {
 
     public void setHudAlpha(float alpha) {
         setAlpha(alpha);
+    }
+
+    public void setDualSeriesBattery(boolean enabled) {
+        this.dualSeriesBattery = enabled;
+        this.preferences.edit().putBoolean(PREF_HUD_DUAL_SERIES_BATTERY, enabled).apply();
+        post(this);
     }
 
     public void toggleElement(int elementIndex, boolean visible) {
@@ -789,9 +854,12 @@ public class FrameRating extends LinearLayout implements Runnable {
 
         if (this.enableBattTemp) {
             if (this.tvBat != null) {
+                float displayedBatteryWatts = this.batteryWatts >= 0.0f && this.dualSeriesBattery
+                        ? this.batteryWatts * 2.0f
+                        : this.batteryWatts;
                 SpannableStringBuilder b = new SpannableStringBuilder();
                 append(b, "BAT ", this.C_BAT);
-                append(b, this.batteryWatts >= 0.0f ? String.format(Locale.US, "%.1fW", this.batteryWatts) : "N/A", this.C_VALUE);
+                append(b, displayedBatteryWatts >= 0.0f ? String.format(Locale.US, "%.1fW", displayedBatteryWatts) : "N/A", this.C_VALUE);
                 this.tvBat.setText(b);
                 this.tvBat.setVisibility(View.VISIBLE);
             }
