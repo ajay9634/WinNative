@@ -6550,7 +6550,10 @@ class UnifiedActivity : ComponentActivity() {
                     ) {
                         // Pick EXE button
                         Button(
-                            onClick = { exePickerLauncher.launch(arrayOf("application/octet-stream", "application/x-msdos-program", "application/x-msdownload", "*/*")) },
+                            onClick = {
+                                if (!ensureAllFilesAccessForImports(context)) return@Button
+                                exePickerLauncher.launch(arrayOf("application/octet-stream", "application/x-msdos-program", "application/x-msdownload", "*/*"))
+                            },
                             modifier = Modifier.fillMaxWidth().height(40.dp),
                             shape = RoundedCornerShape(10.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = SurfaceDark),
@@ -6612,7 +6615,10 @@ class UnifiedActivity : ComponentActivity() {
                                         fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis
                                     )
                                 }
-                                IconButton(onClick = { folderPickerLauncher.launch(null) }, modifier = Modifier.size(28.dp)) {
+                                IconButton(onClick = {
+                                    if (!ensureAllFilesAccessForImports(context)) return@IconButton
+                                    folderPickerLauncher.launch(null)
+                                }, modifier = Modifier.size(28.dp)) {
                                     Icon(Icons.Default.Edit, contentDescription = "Change", tint = Accent, modifier = Modifier.size(14.dp))
                                 }
                             }
@@ -6625,6 +6631,18 @@ class UnifiedActivity : ComponentActivity() {
 
     // Resolve content URI to real file path
     private fun getPathFromContentUri(context: android.content.Context, uri: Uri): String? {
+        val displayName = try {
+            context.contentResolver.query(
+                uri,
+                arrayOf(android.provider.OpenableColumns.DISPLAY_NAME),
+                null,
+                null,
+                null
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) cursor.getString(0) else null
+            }
+        } catch (_: Exception) { null }
+
         // Try DocumentsContract first
         try {
             if (DocumentsContract.isDocumentUri(context, uri)) {
@@ -6640,6 +6658,13 @@ class UnifiedActivity : ComponentActivity() {
                 if (docId.startsWith("msf:") || docId.all { it.isDigit() }) {
                     val resolved = queryContentResolverForPath(context, uri)
                     if (resolved != null) return resolved
+                    if (displayName != null) {
+                        val downloadsFile = java.io.File(
+                            android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS),
+                            displayName
+                        )
+                        if (downloadsFile.exists()) return downloadsFile.absolutePath
+                    }
                 }
                 if (docId.contains(":")) {
                     val parts = docId.split(":", limit = 2)
@@ -6674,7 +6699,32 @@ class UnifiedActivity : ComponentActivity() {
                 return rawPath
             }
         }
+        if (displayName != null) {
+            val downloadsFile = java.io.File(
+                android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS),
+                displayName
+            )
+            if (downloadsFile.exists()) return downloadsFile.absolutePath
+        }
         return rawPath
+    }
+
+    private fun ensureAllFilesAccessForImports(context: android.content.Context): Boolean {
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.R || android.os.Environment.isExternalStorageManager()) {
+            return true
+        }
+
+        android.widget.Toast.makeText(
+            context,
+            "Grant All files access to browse Downloads directly.",
+            android.widget.Toast.LENGTH_LONG
+        ).show()
+
+        val intent = android.content.Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
+            data = android.net.Uri.parse("package:$packageName")
+        }
+        startActivity(intent)
+        return false
     }
 
     // Query ContentResolver for the actual file path via _data column
