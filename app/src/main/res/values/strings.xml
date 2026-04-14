@@ -100,6 +100,11 @@
     <string name="common_ui_open">Open</string>
     <string name="common_ui_connected">Connected</string>
     <string name="common_ui_install">Install</string>
+    <string name="common_ui_application">Application</string>
+    <string name="common_ui_check">Check</string>
+    <string name="common_ui_select">Select</string>
+    <string name="common_ui_not_configured">Not configured</string>
+    <string name="common_ui_reinstall">Reinstall</string>
     <string name="common_ui_exit_app_confirm">Exit WinNative?</string>
     <string name="common_ui_elements_count">%1$d elements</string>
     <string name="common_ui_disabled_placeholder">-- Disabled --</string>
@@ -207,11 +212,13 @@
     <string name="shortcuts_list_error_opening_settings">Error opening shortcut settings</string>
     <string name="shortcuts_list_removed">Shortcut removed successfully.</string>
     <string name="shortcuts_list_remove_failed">Failed to remove the shortcut. Please try again.</string>
+    <string name="shortcuts_list_remove_game_shortcut_message">Remove shortcut\n%1$s</string>
     <string name="shortcuts_list_cloned">Shortcut cloned successfully.</string>
     <string name="shortcuts_list_clone_failed">Failed to clone shortcut.</string>
     <string name="shortcuts_list_exported_to">Shortcut Exported to %1$s</string>
     <string name="shortcuts_list_failed_export">Failed to export shortcut</string>
     <string name="shortcuts_list_added">Shortcut added successfully.</string>
+    <string name="shortcuts_list_readded_existing">Re-added existing shortcut</string>
     <string name="shortcuts_list_failed_add">Failed to add shortcut.</string>
 
     <!-- Shortcuts > Properties -->
@@ -257,6 +264,7 @@
     <string name="input_controls_editor_profile_name">Profile Name</string>
     <string name="input_controls_editor_no_profile_selected">No profile selected</string>
     <string name="input_controls_editor_no_profile_found">No profile found</string>
+    <string name="input_controls_editor_tap_to_switch">Tap to switch</string>
     <string name="input_controls_editor_confirm_remove_profile">Do you want to remove this profile?</string>
     <string name="input_controls_editor_confirm_duplicate_profile">Do you want to duplicate this profile?</string>
     <string name="input_controls_editor_title">Controls Editor</string>
@@ -264,6 +272,7 @@
     <string name="input_controls_editor_profile_exported_to">Profile exported to</string>
     <string name="input_controls_editor_unable_to_import">Unable to import profile</string>
     <string name="input_controls_editor_import_profile">Import Profile</string>
+    <string name="input_controls_editor_download_profile">Download Profile</string>
     <string name="input_controls_editor_export_profile">Export Profile</string>
     <string name="input_controls_editor_range">Range</string>
     <string name="input_controls_editor_confirm_download_profiles">Do you want to download the selected profiles?</string>
@@ -344,6 +353,7 @@
     <string name="container_wine_vkd3d_feature_level">VKD3D Feature Level</string>
     <string name="container_wine_ddraw_wrapper">DDraw Wrapper</string>
     <string name="container_wine_error_not_installed">Wine/Proton package \'%1$s\' is not installed and could not be downloaded.</string>
+    <string name="container_no_wine_installed">No Wine or Proton installed. Install one first.</string>
     <string name="container_wine_title">Wine</string>
     <string name="container_wine_opengl">OpenGL</string>
 
@@ -678,9 +688,6 @@ E.g. <b>META</b> for <i>META key</i>, \n
     <string name="settings_general_refresh_rate">Refresh Rate</string>
     <string name="settings_general_refresh_rate_auto_max">Max</string>
     <string name="settings_general_refresh_rate_summary">Set display refresh rate and DXVK frame limit</string>
-    <string name="settings_general_help_file_provider">
-        &lt;i&gt;&lt;b&gt;File Provider&lt;/b&gt;&lt;/i&gt; allows access to Winlator\'s internal data through android file manager.&lt;br/&gt;&lt;br/&gt;
-    </string>
     <string name="settings_general_touchscreen_timeout">Touchscreen Timeout (Requires Restart)</string>
     <string name="settings_general_touchscreen_haptics">Enable Touchscreen Haptic Feedback</string>
     <string name="settings_general_open_with_android_browser">Open Android Browser in Wine</string>
@@ -735,21 +742,50 @@ E.g. <b>META</b> for <i>META key</i>, \n
     <string name="settings_debug_download_logs">Download Logs</string>
     <string name="settings_debug_download_logs_description">Log download resolver and WinNative fallback events</string>
     <string name="settings_debug_share_logs">Share Logs</string>
+    <string name="settings_debug_logs_subject">WinNative Logs (%1$s)</string>
+    <string name="settings_debug_no_logs_available">No debug logs available. Enable debugging options first and launch a game.</string>
+    <string name="settings_debug_capture_failed">Failed to capture logs: %1$s</string>
+    <string name="settings_debug_log_to_file_desc">Log WinNative process errors, warnings and crashes to file</string>
+    <string name="settings_debug_section_emulation">Emulation</string>
+    <string name="settings_debug_section_subsystems">Subsystems</string>
+    <string name="settings_debug_section_tools">Tools</string>
+    <string name="settings_debug_no_channels_selected">No channels selected</string>
+    <string name="settings_debug_no_channels_available">No channels available</string>
+    <string name="settings_debug_channel_toggle_hint">Tap to toggle channels. Enabled channels are included in Wine debug output.</string>
+    <string name="settings_debug_remove_channel_desc">Remove %1$s</string>
+
+    <string name="settings_other_language_title">Language</string>
+    <string name="settings_other_language_summary">Choose the display language</string>
+    <string name="settings_other_language_system_default">System default</string>
+
+    <string name="settings_other_section_integration">Integration</string>
+    <string name="settings_other_checking_for_updates">Checking for updates\u2026</string>
+    <string name="settings_other_update_check_cooldown">Please wait %1$ds before checking again</string>
+    <string name="settings_other_persistable_permission_failed">Unable to take persistable permissions: %1$s</string>
+    <string name="settings_other_keep_app_open">Please keep the app open while this finishes.</string>
 
     <!-- Settings > Content Packages -->
     <string name="settings_content_install">Install Content</string>
     <string name="settings_content_type">Content Type</string>
     <string name="settings_content_components">Components</string>
-    <string name="settings_content_install_confirm_message">Only install trusted packages. These files can include executable content and may affect your device or data.
-
-Supported packages use the .wcp extension and are compressed as xz or zst.</string>
+    <string name="settings_content_auto_create_container">Auto-create container</string>
+    <string name="settings_content_remove_title">Remove component?</string>
+    <string name="settings_content_empty_subtitle">Install a package or switch type to get started.</string>
+    <string name="settings_content_container_created">Created container: %1$s</string>
+    <string name="settings_content_download_failed">Download failed.</string>
+    <string name="common_ui_working">Working…</string>
+    <string name="settings_content_desc_wine">The Windows compatibility layer used to run games and apps. You need at least one Wine or FEXCore version installed.</string>
+    <string name="settings_content_desc_proton">Valve\'s Wine-based build with extra patches for games. Useful for some titles, but standard Wine usually works fine.</string>
+    <string name="settings_content_desc_dxvk">Translates DirectX 9, 10, and 11 to Vulkan. This usually improves performance in older Windows games.</string>
+    <string name="settings_content_desc_vkd3d">Translates DirectX 12 to Vulkan. Needed for many newer Windows games.</string>
+    <string name="settings_content_desc_box64">Translates x86 / x64 Windows code so it can run on ARM devices. Box64 or FEXCore is required for most games.</string>
+    <string name="settings_content_desc_wowbox64">A Box64 build for Wine WoW64 mode. Only needed when using a 64-bit prefix with 32-bit app support.</string>
+    <string name="settings_content_desc_fexcore">An alternative x86 / x64 translator. Try it if a game has issues or poor performance with Box64.</string>
     <string name="settings_content_unable_to_install">Unable to install content.</string>
     <string name="settings_content_install_failed">Install Failed</string>
     <string name="settings_content_file_cannot_be_recognized">File cannot be recognized.</string>
     <string name="settings_content_profile_not_found">Profile not found in content.</string>
     <string name="settings_content_profile_cannot_be_recognized">Profile cannot be recognized</string>
-    <string name="settings_content_info">Content Info</string>
-    <string name="settings_content_version_code">Version Code</string>
     <string name="settings_content_file_list">File List</string>
     <string name="settings_content_install_directory">Install Directory</string>
     <string name="settings_content_installed_success">Content installed successfully!</string>
@@ -927,5 +963,25 @@ Installed path:
     <string name="saves_import_export_exported_failed">Failed to export saves: %1$s</string>
     <string name="saves_import_export_imported">Saves imported successfully</string>
     <string name="saves_import_export_imported_failed">Failed to import saves: %1$s</string>
+
+    <!-- Preloader > Launch Screen -->
+    <string name="preloader_default_name">Container</string>
+    <string name="preloader_initializing">Initializing…</string>
+    <string name="preloader_launching">Launching…</string>
+    <string name="preloader_closing">Closing %1$s…</string>
+    <string name="preloader_setup_environment">Setting up environment…</string>
+    <string name="preloader_installing_mono">Installing Wine Mono v%1$s…</string>
+    <string name="preloader_installing_redist">Installing redistributables…</string>
+    <string name="preloader_unpacking_exe">Unpacking game executable…</string>
+    <string name="preloader_downloading_cloud">Downloading cloud saves…</string>
+    <string name="preloader_syncing_cloud">Syncing cloud saves…</string>
+    <string name="preloader_cloud_downloading">Cloud Sync Downloading…</string>
+    <string name="preloader_cloud_backup">Backing up save to Google Drive…</string>
+    <string name="cloud_sync_failed_provider">%1$s cloud save sync failed.</string>
+    <string name="google_cloud_backup_failed">Google Drive backup failed.</string>
+    <string name="preloader_platform_steam">Steam</string>
+    <string name="preloader_platform_epic">Epic Games</string>
+    <string name="preloader_platform_gog">GOG</string>
+    <string name="preloader_platform_custom">Custom Game</string>
 
 </resources>
