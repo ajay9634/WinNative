@@ -3729,6 +3729,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
         }
 
         envVars.put("GALLIUM_DRIVER", "zink");
+        envVars.put("LIBGL_KOPPER_DISABLE", "true");
 
         if (firstTimeBoot) {
             Log.d("XServerDisplayActivity", "First time container boot, re-extracting libs");
@@ -3784,9 +3785,10 @@ public class XServerDisplayActivity extends AppCompatActivity {
         String maxDeviceMemory = graphicsDriverConfig.get("maxDeviceMemory");
         if (maxDeviceMemory != null && Integer.parseInt(maxDeviceMemory) > 0)
             envVars.put("WRAPPER_VMEM_MAX_SIZE", maxDeviceMemory);
-        
+
         String presentMode = graphicsDriverConfig.get("presentMode");
-        if (presentMode != null && presentMode.contains("immediate")) {
+        if (presentMode == null || presentMode.isEmpty()) presentMode = "mailbox";
+        if (presentMode.contains("immediate")) {
             envVars.put("WRAPPER_MAX_IMAGE_COUNT", "1");
         }
         envVars.put("MESA_VK_WSI_PRESENT_MODE", presentMode);
@@ -3807,7 +3809,6 @@ public class XServerDisplayActivity extends AppCompatActivity {
         envVars.put("WRAPPER_DISABLE_PRESENT_WAIT", disablePresentWait);
 
         String bcnEmulation = graphicsDriverConfig.get("bcnEmulation");
-
         String bcnEmulationType = graphicsDriverConfig.get("bcnEmulationType");
 
         switch (bcnEmulation) {

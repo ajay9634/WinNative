@@ -331,8 +331,10 @@ Java_com_winlator_cmod_runtime_system_GPUInformation_getVulkanVersion(
 
   destroyInstance(instance, NULL);
 
-  if (vulkan_handle)
+  if (vulkan_handle) {
     dlclose(vulkan_handle);
+    vulkan_handle = NULL;
+  }
 
   return result;
 }
@@ -358,8 +360,10 @@ Java_com_winlator_cmod_runtime_system_GPUInformation_getVendorID(
 
   destroyInstance(instance, NULL);
 
-  if (vulkan_handle)
+  if (vulkan_handle) {
     dlclose(vulkan_handle);
+    vulkan_handle = NULL;
+  }
 
   return vendorID;
 }
@@ -384,8 +388,10 @@ Java_com_winlator_cmod_runtime_system_GPUInformation_getRenderer(
 
   destroyInstance(instance, NULL);
 
-  if (vulkan_handle)
+  if (vulkan_handle) {
     dlclose(vulkan_handle);
+    vulkan_handle = NULL;
+  }
 
   return result;
 }
@@ -445,8 +451,10 @@ Java_com_winlator_cmod_runtime_system_GPUInformation_enumerateExtensions(
 
   destroyInstance(instance, NULL);
 
-  if (vulkan_handle)
+  if (vulkan_handle) {
     dlclose(vulkan_handle);
+    vulkan_handle = NULL;
+  }
 
   return extensions;
 }
