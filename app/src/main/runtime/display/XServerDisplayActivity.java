@@ -2326,7 +2326,8 @@ public class XServerDisplayActivity extends FixedFontScaleAppCompatActivity {
                 hudScale,
                 hudElements,
                 dualSeriesBattery,
-                hudCardExpanded
+                hudCardExpanded,
+                xServerView != null ? xServerView.getRenderer().getFpsLimit() : 0
         );
 
         if (drawerActionListener == null) {
@@ -2371,6 +2372,14 @@ public class XServerDisplayActivity extends FixedFontScaleAppCompatActivity {
                     @Override
                     public void onHUDCardExpandedChanged(boolean expanded) {
                         hudCardExpanded = expanded;
+                        renderDrawerMenu();
+                    }
+
+                    @Override
+                    public void onFPSLimitChanged(int limit) {
+                        if (xServerView != null) {
+                            xServerView.getRenderer().setFpsLimit(limit);
+                        }
                         renderDrawerMenu();
                     }
                 };
