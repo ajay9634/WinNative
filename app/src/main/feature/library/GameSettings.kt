@@ -40,6 +40,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.HelpOutline
+import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.Extension
 import androidx.compose.material.icons.outlined.Monitor
@@ -144,6 +145,14 @@ class GameSettingsStateHolder {
     val selectedScreenSize = mutableIntStateOf(0)
     val customWidth = mutableStateOf("")
     val customHeight = mutableStateOf("")
+    val gameCardArtworkSelected = mutableStateOf(false)
+    val gameCardArtworkSummary = mutableStateOf("")
+    val gridArtworkSelected = mutableStateOf(false)
+    val gridArtworkSummary = mutableStateOf("")
+    val carouselArtworkSelected = mutableStateOf(false)
+    val carouselArtworkSummary = mutableStateOf("")
+    val listArtworkSelected = mutableStateOf(false)
+    val listArtworkSummary = mutableStateOf("")
     val refreshRateEntries = mutableStateOf<List<String>>(emptyList())
     val selectedRefreshRate = mutableIntStateOf(0)
 
@@ -252,6 +261,7 @@ class GameSettingsStateHolder {
     val forceDlc = mutableStateOf(false)
     val steamOfflineMode = mutableStateOf(false)
     val unpackFiles = mutableStateOf(false)
+    val runtimePatcher = mutableStateOf(false)
     val launchRealSteam = mutableStateOf(false)
     val steamTypeEntries = mutableStateOf<List<String>>(emptyList())
     val selectedSteamType = mutableIntStateOf(0)
@@ -267,6 +277,8 @@ class GameSettingsStateHolder {
     // Input
     val controlsProfileEntries = mutableStateOf<List<String>>(emptyList())
     val selectedControlsProfile = mutableIntStateOf(0)
+    val numControllersEntries = mutableStateOf<List<String>>(emptyList())
+    val selectedNumControllers = mutableIntStateOf(0)
     val disableXInput = mutableStateOf(false)
     val simTouchScreen = mutableStateOf(false)
     val sdl2Compatibility = mutableStateOf(false)
@@ -318,10 +330,20 @@ interface GameSettingsCallbacks {
     fun onConfirm()
     fun onDismiss()
     fun onAddToHomeScreen()
+    fun onPickGameCardArtwork() {}
+    fun onRemoveGameCardArtwork() {}
+    fun onPickGridArtwork() {}
+    fun onRemoveGridArtwork() {}
+    fun onPickCarouselArtwork() {}
+    fun onRemoveCarouselArtwork() {}
+    fun onPickListArtwork() {}
+    fun onRemoveListArtwork() {}
+    fun onOpenArtworkSource() {}
     fun onRemoveEnvVar(index: Int)
     fun onUpdateWinComponent(isDirectX: Boolean, index: Int, newValue: Int)
     fun onSelectExe() {}
     fun onGfxDriverVersionChanged(versionIndex: Int) {}
+    fun onDxvkVersionChanged(versionIndex: Int) {}
     fun onDxvkVkd3dVersionChanged(versionIndex: Int) {}
     fun onContainerChanged(containerIndex: Int) {}
     fun onEmulatorChanged() {}
@@ -825,6 +847,102 @@ private fun GeneralSection(
 ) {
     val isContainer = state.isContainerEditMode.value
 
+    @Composable
+    fun ArtworkPickerRow(
+        title: String,
+        summary: String,
+        selected: Boolean,
+        onPick: () -> Unit,
+        onRemove: () -> Unit,
+    ) {
+        @Composable
+        fun ActionButton(
+            text: String,
+            tint: Color,
+            onClick: () -> Unit,
+        ) {
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(9.dp))
+                    .background(tint.copy(alpha = 0.08f))
+                    .border(1.dp, tint.copy(alpha = 0.2f), RoundedCornerShape(9.dp))
+                    .clickable { onClick() }
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+            ) {
+                Text(
+                    text = text,
+                    color = tint,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+        }
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(InputSurface)
+                .border(1.dp, InputBorder, RoundedCornerShape(12.dp))
+                .padding(horizontal = 12.dp, vertical = 10.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(
+                        text = title,
+                        color = TextPrimary,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+
+                    if (summary.isNotBlank()) {
+                        Spacer(Modifier.height(3.dp))
+
+                        Text(
+                            text = summary,
+                            color = TextSecondary,
+                            fontSize = 11.sp,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    ActionButton(
+                        text =
+                            stringResource(
+                                if (selected) {
+                                    R.string.shortcuts_library_artwork_change
+                                } else {
+                                    R.string.shortcuts_library_artwork_set
+                                }
+                            ),
+                        tint = AccentBlue,
+                        onClick = onPick
+                    )
+
+                    if (selected) {
+                        ActionButton(
+                            text = stringResource(R.string.common_ui_remove),
+                            tint = DangerRed,
+                            onClick = onRemove
+                        )
+                    }
+                }
+            }
+        }
+    }
+
     SettingGroup {
         // Name
         SettingTextField(
@@ -913,6 +1031,91 @@ private fun GeneralSection(
                     )
                 }
             }
+        }
+    }
+
+    if (!isContainer) {
+        Spacer(Modifier.height(16.dp))
+
+        SettingGroup {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = stringResource(R.string.shortcuts_library_artwork_title),
+                    color = TextSecondary,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    letterSpacing = 0.8.sp
+                )
+
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(AccentBlue.copy(alpha = 0.08f))
+                        .border(1.dp, AccentBlue.copy(alpha = 0.2f), RoundedCornerShape(10.dp))
+                        .clickable { callbacks.onOpenArtworkSource() }
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            Icons.AutoMirrored.Outlined.OpenInNew,
+                            contentDescription = null,
+                            tint = AccentBlue,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = stringResource(R.string.shortcuts_library_artwork_open_source),
+                            color = AccentBlue,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(10.dp))
+
+            ArtworkPickerRow(
+                title = stringResource(R.string.shortcuts_library_artwork_game_card_title),
+                summary = state.gameCardArtworkSummary.value,
+                selected = state.gameCardArtworkSelected.value,
+                onPick = callbacks::onPickGameCardArtwork,
+                onRemove = callbacks::onRemoveGameCardArtwork
+            )
+
+            Spacer(Modifier.height(10.dp))
+
+            ArtworkPickerRow(
+                title = stringResource(R.string.shortcuts_library_artwork_grid_title),
+                summary = state.gridArtworkSummary.value,
+                selected = state.gridArtworkSelected.value,
+                onPick = callbacks::onPickGridArtwork,
+                onRemove = callbacks::onRemoveGridArtwork
+            )
+
+            Spacer(Modifier.height(10.dp))
+
+            ArtworkPickerRow(
+                title = stringResource(R.string.shortcuts_library_artwork_carousel_title),
+                summary = state.carouselArtworkSummary.value,
+                selected = state.carouselArtworkSelected.value,
+                onPick = callbacks::onPickCarouselArtwork,
+                onRemove = callbacks::onRemoveCarouselArtwork
+            )
+
+            Spacer(Modifier.height(10.dp))
+
+            ArtworkPickerRow(
+                title = stringResource(R.string.shortcuts_library_artwork_list_title),
+                summary = state.listArtworkSummary.value,
+                selected = state.listArtworkSelected.value,
+                onPick = callbacks::onPickListArtwork,
+                onRemove = callbacks::onRemoveListArtwork
+            )
         }
     }
 
@@ -1501,7 +1704,10 @@ private fun DXVKConfigCard(
                     label = stringResource(R.string.container_wine_dxvk_version),
                     entries = state.dxvkVersionEntries.value,
                     selectedIndex = state.dxvkSelectedVersion.intValue,
-                    onSelected = { state.dxvkSelectedVersion.intValue = it }
+                    onSelected = {
+                        state.dxvkSelectedVersion.intValue = it
+                        callbacks.onDxvkVersionChanged(it)
+                    }
                 )
 
                 // Async toggle - greyed out when version doesn't support it
@@ -1672,7 +1878,12 @@ private fun SteamSection(state: GameSettingsStateHolder) {
         SettingCheckbox(
             label = stringResource(R.string.shortcuts_properties_use_cold_client),
             checked = state.useColdClient.value,
-            onCheckedChange = { state.useColdClient.value = it }
+            onCheckedChange = {
+                state.useColdClient.value = it
+                // Cold Client and Launch Steam Client are mutually exclusive —
+                // they use different Steam DLL setups that can't coexist at runtime.
+                if (it) state.launchRealSteam.value = false
+            }
         )
         Spacer(Modifier.height(4.dp))
         Text(
@@ -1714,11 +1925,36 @@ private fun SteamSection(state: GameSettingsStateHolder) {
         SettingCheckbox(
             label = stringResource(R.string.shortcuts_properties_unpack_files),
             checked = state.unpackFiles.value,
-            onCheckedChange = { state.unpackFiles.value = it }
+            onCheckedChange = {
+                state.unpackFiles.value = it
+                // Unpack Files swaps the on-disk exe with a Steamless-stripped copy —
+                // incompatible with the original-exe launch Real Steam does via -applaunch.
+                if (it) state.launchRealSteam.value = false
+            }
         )
         Spacer(Modifier.height(4.dp))
         Text(
             stringResource(R.string.shortcuts_properties_unpack_files_description),
+            color = TextDim,
+            fontSize = 11.sp,
+            lineHeight = 16.sp
+        )
+        Spacer(Modifier.height(12.dp))
+
+        SettingCheckbox(
+            label = stringResource(R.string.shortcuts_properties_runtime_patcher),
+            checked = state.runtimePatcher.value,
+            onCheckedChange = {
+                state.runtimePatcher.value = it
+                // Runtime DRM Patcher injects Goldberg DLLs into the game at launch —
+                // Real Steam talks to the actual Steam client and doesn't want emulated
+                // steamclient DLLs poking around in its address space.
+                if (it) state.launchRealSteam.value = false
+            }
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(
+            stringResource(R.string.shortcuts_properties_runtime_patcher_description),
             color = TextDim,
             fontSize = 11.sp,
             lineHeight = 16.sp
@@ -1733,7 +1969,17 @@ private fun SteamSection(state: GameSettingsStateHolder) {
         SettingCheckbox(
             label = stringResource(R.string.shortcuts_properties_launch_steam_client_beta),
             checked = state.launchRealSteam.value,
-            onCheckedChange = { state.launchRealSteam.value = it }
+            onCheckedChange = {
+                state.launchRealSteam.value = it
+                // Launch Steam Client runs the game through the real Steam client's
+                // -applaunch pipeline. Cold Client, Unpack Files, and Runtime DRM
+                // Patcher all conflict with that path — disable when this one is on.
+                if (it) {
+                    state.useColdClient.value = false
+                    state.unpackFiles.value = false
+                    state.runtimePatcher.value = false
+                }
+            }
         )
         Spacer(Modifier.height(4.dp))
         Text(
@@ -2250,6 +2496,10 @@ private fun EnvVarRow(
     trailing: (@Composable () -> Unit)? = null
 ) {
     var nameMenuExpanded by remember { mutableStateOf(false) }
+    var isCustomMode by remember(name) {
+        mutableStateOf(name.isNotEmpty() && findKnownEnvVar(name) == null)
+    }
+    var customText by remember(name) { mutableStateOf(if (isCustomMode) name else "") }
 
     Row(
         modifier = Modifier
@@ -2257,33 +2507,66 @@ private fun EnvVarRow(
             .padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Name dropdown
+        // Name dropdown or custom text field
         Box(modifier = Modifier.weight(1.6f)) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(InputSurface)
-                    .border(1.dp, AccentBlue.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
-                    .clickable { nameMenuExpanded = true }
-                    .padding(horizontal = 12.dp, vertical = 10.dp),
-                contentAlignment = Alignment.CenterStart
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        if (name.isEmpty()) stringResource(R.string.container_config_new_env_var) else name,
-                        color = if (name.isEmpty()) TextDim else TextPrimary,
-                        fontSize = 13.sp,
-                        modifier = Modifier.weight(1f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Icon(
-                        Icons.Outlined.KeyboardArrowDown,
-                        contentDescription = null,
-                        tint = TextSecondary,
-                        modifier = Modifier.size(16.dp)
-                    )
+            if (isCustomMode) {
+                // Custom mode: show editable text field for variable name
+                BasicTextField(
+                    value = customText,
+                    onValueChange = { newText ->
+                        customText = newText
+                        onNameChange(newText.trim())
+                    },
+                    textStyle = TextStyle(
+                        color = TextPrimary,
+                        fontSize = 13.sp
+                    ),
+                    cursorBrush = SolidColor(AccentBlue),
+                    singleLine = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(InputSurface)
+                        .border(1.dp, AccentBlue.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    decorationBox = { innerTextField ->
+                        if (customText.isEmpty()) {
+                            Text(
+                                stringResource(R.string.container_config_new_env_var),
+                                color = TextDim,
+                                fontSize = 13.sp
+                            )
+                        }
+                        innerTextField()
+                    }
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(InputSurface)
+                        .border(1.dp, AccentBlue.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                        .clickable { nameMenuExpanded = true }
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    contentAlignment = Alignment.CenterStart
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            if (name.isEmpty()) stringResource(R.string.container_config_new_env_var) else name,
+                            color = if (name.isEmpty()) TextDim else TextPrimary,
+                            fontSize = 13.sp,
+                            modifier = Modifier.weight(1f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Icon(
+                            Icons.Outlined.KeyboardArrowDown,
+                            contentDescription = null,
+                            tint = TextSecondary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
                 }
             }
             DropdownMenu(
@@ -2295,8 +2578,36 @@ private fun EnvVarRow(
                     .height(360.dp)
                     .width(260.dp)
             ) {
-                EnvVarsView.knownEnvVars.forEach { known ->
-                    val knownName = known[0]
+                // "Custom" option at top — allows typing a variable name
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            stringResource(R.string.common_ui_custom),
+                            color = AccentBlue,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    },
+                    onClick = {
+                        isCustomMode = true
+                        customText = ""
+                        onNameChange("")
+                        nameMenuExpanded = false
+                    }
+                )
+                // Divider after Custom
+                Box(Modifier.fillMaxWidth().height(1.dp).background(DividerColor))
+
+                // Sort: unselected vars in ABC order, then selected vars in ABC order
+                val allKnown = EnvVarsView.knownEnvVars.map { it[0] }
+                val unselected = allKnown
+                    .filter { it !in excludeOtherNames && it != name }
+                    .sortedBy { it.uppercase() }
+                val selected = allKnown
+                    .filter { it in excludeOtherNames }
+                    .sortedBy { it.uppercase() }
+
+                (unselected + selected).forEach { knownName ->
                     val disabled = knownName != name && knownName in excludeOtherNames
                     DropdownMenuItem(
                         enabled = !disabled,
@@ -2308,6 +2619,8 @@ private fun EnvVarRow(
                             )
                         },
                         onClick = {
+                            isCustomMode = false
+                            customText = ""
                             onNameChange(knownName)
                             nameMenuExpanded = false
                         }
@@ -2572,6 +2885,15 @@ private fun InputSection(state: GameSettingsStateHolder) {
             )
 
             Spacer(Modifier.height(12.dp))
+
+            SettingDropdown(
+                label = stringResource(R.string.num_controllers),
+                entries = state.numControllersEntries.value,
+                selectedIndex = state.selectedNumControllers.intValue,
+                onSelected = { state.selectedNumControllers.intValue = it }
+            )
+
+            Spacer(Modifier.height(12.dp))
         }
 
         // Exclusive Input — when off, XInput + DInput are both forced on and locked below.
@@ -2766,9 +3088,11 @@ private fun AdvancedSection(
     callbacks: GameSettingsCallbacks
 ) {
 
-    // Wine / Proton version (read-only)
+    // Wine / Proton version (read-only) — only show on existing containers
+    // where it's not editable. When creating a new container the user already
+    // selects the Wine Version in the General tab.
     val wineVersionDisplay = state.wineVersionDisplay.value
-    if (wineVersionDisplay.isNotEmpty()) {
+    if (wineVersionDisplay.isNotEmpty() && !state.wineVersionEditable.value) {
         SubsectionLabel(stringResource(R.string.container_wine_version))
         Spacer(Modifier.height(8.dp))
         SettingGroup {

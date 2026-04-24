@@ -10,7 +10,7 @@ import com.winlator.cmod.feature.stores.steam.enums.AppType
  */
 @Entity(tableName = "epic_games")
 data class EpicGame(
-    // Generated INT for GameNative to track Epic. For any epic-API-related functionality, use catalogId.
+    // Internal Int id used as primary key. For any epic-API-related functionality, use catalogId.
     @PrimaryKey(autoGenerate = true)
     @ColumnInfo("id")
     val id: Int = 0,
@@ -148,6 +148,8 @@ data class EpicCredentials(
     val accountId: String,
     val displayName: String,
     val expiresAt: Long = 0,
+    /** Epoch millis when the refresh token dies. 0 if unknown (legacy on-disk format). */
+    val refreshExpiresAt: Long = 0,
 )
 
 /**

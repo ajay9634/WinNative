@@ -5,6 +5,7 @@ import android.util.Log
 import androidx.preference.PreferenceManager
 import com.winlator.cmod.app.config.SettingsConfig
 import com.winlator.cmod.shared.io.FileUtils
+import java.io.Closeable
 import java.io.File
 
 object LogManager {
@@ -58,6 +59,7 @@ object LogManager {
      */
     @JvmStatic
     fun rotateLogsOnAppStart(context: Context) {
+        if (!isAnyLoggingEnabled(context)) return
         val logsDir = getLogsDir(context)
         // Delete any existing .old.log files first
         logsDir.listFiles()?.filter { it.name.endsWith(".old.log") }?.forEach { it.delete() }
@@ -95,11 +97,12 @@ object LogManager {
 
         try {
             stopLogcat()
-            Runtime.getRuntime().exec("logcat -c").waitFor()
+            runBlockingLogcatCommand(arrayOf("logcat", "-c"))
             logcatProcess =
                 Runtime.getRuntime().exec(
                     arrayOf("logcat", "-f", logFile.absolutePath, "*:D"),
                 )
+            closeProcessStdin(logcatProcess)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to start logcat: ${e.message}")
         }
@@ -112,7 +115,7 @@ object LogManager {
 
     private fun stopLogcat() {
         try {
-            logcatProcess?.destroy()
+            logcatProcess?.let(::destroyProcess)
             logcatProcess = null
         } catch (e: Exception) {
             Log.e(TAG, "Failed to stop logcat: ${e.message}")
@@ -147,6 +150,7 @@ object LogManager {
                 Runtime.getRuntime().exec(
                     arrayOf("logcat", "-f", logFile.absolutePath, "--pid=$pid", "*:W"),
                 )
+            closeProcessStdin(appLogProcess)
             Log.i(TAG, "Application debug logging started (PID=$pid)")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to start application logging: ${e.message}")
@@ -156,10 +160,37 @@ object LogManager {
     @JvmStatic
     fun stopAppLogging() {
         try {
-            appLogProcess?.destroy()
+            appLogProcess?.let(::destroyProcess)
             appLogProcess = null
         } catch (e: Exception) {
             Log.e(TAG, "Failed to stop application logging: ${e.message}")
+        }
+    }
+
+    private fun runBlockingLogcatCommand(command: Array<String>) {
+        val process = Runtime.getRuntime().exec(command)
+        try {
+            process.waitFor()
+        } finally {
+            destroyProcess(process)
+        }
+    }
+
+    private fun destroyProcess(process: Process) {
+        closeProcessStdin(process)
+        closeQuietly(process.inputStream)
+        closeQuietly(process.errorStream)
+        process.destroy()
+    }
+
+    private fun closeProcessStdin(process: Process?) {
+        closeQuietly(process?.outputStream)
+    }
+
+    private fun closeQuietly(closeable: Closeable?) {
+        try {
+            closeable?.close()
+        } catch (_: Exception) {
         }
     }
 

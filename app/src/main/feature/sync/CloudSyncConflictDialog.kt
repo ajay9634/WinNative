@@ -1,6 +1,7 @@
 package com.winlator.cmod.feature.sync
 import android.app.Activity
 import android.app.Dialog
+import android.util.TypedValue
 import android.view.ViewGroup
 import android.view.Window
 import android.view.WindowManager
@@ -13,16 +14,24 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -34,30 +43,42 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
-import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
+import com.winlator.cmod.R
+import com.winlator.cmod.feature.sync.google.GameSaveBackupManager
+import com.winlator.cmod.shared.theme.WinNativeTheme
 
 data class CloudSyncConflictTimestamps(
     val localTimestampLabel: String,
     val cloudTimestampLabel: String,
 )
 
+/**
+ * Callback for the cloud-save conflict dialog. [keepBackup] reflects whether the
+ * user wanted the replaced side archived into Save History before the overwrite.
+ */
+fun interface CloudSyncConflictChoice {
+    fun onChoice(keepBackup: Boolean)
+}
+
 object CloudSyncConflictDialog {
     @JvmStatic
     fun show(
         activity: Activity,
         timestamps: CloudSyncConflictTimestamps,
-        onUseCloud: Runnable,
-        onUseLocal: Runnable,
+        onUseCloud: CloudSyncConflictChoice,
+        onUseLocal: CloudSyncConflictChoice,
     ) {
         val dialog =
             Dialog(activity, android.R.style.Theme_DeviceDefault_Dialog_NoActionBar).apply {
@@ -85,7 +106,7 @@ object CloudSyncConflictDialog {
                     setViewTreeSavedStateRegistryOwner(it)
                 }
                 setContent {
-                    MaterialTheme(
+                    WinNativeTheme(
                         colorScheme =
                             darkColorScheme(
                                 primary = Color(0xFF57CBDE),
@@ -97,13 +118,17 @@ object CloudSyncConflictDialog {
                     ) {
                         CloudSyncConflictDialogContent(
                             timestamps = timestamps,
-                            onUseCloud = {
-                                dialog.dismiss()
-                                onUseCloud.run()
+                            initialKeepBackup = GameSaveBackupManager.isKeepReplacedBackupEnabled(activity),
+                            onKeepBackupChanged = { enabled ->
+                                GameSaveBackupManager.setKeepReplacedBackupEnabled(activity, enabled)
                             },
-                            onUseLocal = {
+                            onUseCloud = { keepBackup ->
                                 dialog.dismiss()
-                                onUseLocal.run()
+                                onUseCloud.onChoice(keepBackup)
+                            },
+                            onUseLocal = { keepBackup ->
+                                dialog.dismiss()
+                                onUseLocal.onChoice(keepBackup)
                             },
                         )
                     }
@@ -112,23 +137,36 @@ object CloudSyncConflictDialog {
 
         dialog.setContentView(composeView)
         dialog.show()
+        dialog.window?.apply {
+            val dm = activity.resources.displayMetrics
+            val horizontalMarginPx =
+                TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 16f, dm).toInt()
+            val maxDialogWidthPx =
+                TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 640f, dm).toInt()
+            val targetWidth = (dm.widthPixels - (horizontalMarginPx * 2)).coerceAtMost(maxDialogWidthPx)
+            setLayout(targetWidth, WindowManager.LayoutParams.WRAP_CONTENT)
+        }
     }
 }
-
 @Composable
 private fun CloudSyncConflictDialogContent(
     timestamps: CloudSyncConflictTimestamps,
-    onUseCloud: () -> Unit,
-    onUseLocal: () -> Unit,
+    initialKeepBackup: Boolean,
+    onKeepBackupChanged: (Boolean) -> Unit,
+    onUseCloud: (keepBackup: Boolean) -> Unit,
+    onUseLocal: (keepBackup: Boolean) -> Unit,
 ) {
     var visible by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { visible = true }
+    val scrollState = rememberScrollState()
+    var keepBackup by remember { mutableStateOf(initialKeepBackup) }
 
     Surface(
         modifier =
             Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(16.dp)
+                .widthIn(max = 640.dp),
         shape = RoundedCornerShape(24.dp),
         color = Color(0xFF171E27),
         tonalElevation = 0.dp,
@@ -139,107 +177,206 @@ private fun CloudSyncConflictDialogContent(
                 fadeIn(animationSpec = tween(220, easing = FastOutSlowInEasing)) +
                     expandVertically(animationSpec = tween(240, easing = FastOutSlowInEasing)),
         ) {
-            Column(
-                modifier =
-                    Modifier
-                        .background(
-                            brush =
-                                Brush.verticalGradient(
-                                    colors = listOf(Color(0xFF1B2430), Color(0xFF151B24)),
-                                ),
-                        ).border(1.dp, Color(0xFF263547), RoundedCornerShape(24.dp))
-                        .padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-            ) {
-                Surface(
-                    shape = RoundedCornerShape(999.dp),
-                    color = Color(0x1F57CBDE),
-                ) {
-                    Text(
-                        text = "Cloud Save Sync",
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                        color = Color(0xFF7BD8E8),
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                }
+            BoxWithConstraints {
+                val compactActions = maxWidth < 420.dp
 
-                Text(
-                    text = "A newer cloud save was detected for this title.",
-                    style = MaterialTheme.typography.titleLarge,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Text(
-                    text = "Choose which version to keep before launch. Syncing from cloud will replace the local save data on this device.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.78f),
-                )
-
-                Surface(
-                    shape = RoundedCornerShape(18.dp),
-                    color = Color(0xFF121922),
+                Column(
                     modifier =
                         Modifier
-                            .fillMaxWidth()
-                            .border(1.dp, Color(0xFF233141), RoundedCornerShape(18.dp)),
+                            .background(
+                                brush =
+                                    Brush.verticalGradient(
+                                        colors = listOf(Color(0xFF1B2430), Color(0xFF151B24)),
+                                    ),
+                            ).border(1.dp, Color(0xFF263547), RoundedCornerShape(24.dp))
+                            .padding(20.dp)
+                            .heightIn(max = 560.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
                     Column(
                         modifier =
                             Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(14.dp),
+                                .weight(1f, fill = false)
+                                .verticalScroll(scrollState),
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
                     ) {
+                        Surface(
+                            shape = RoundedCornerShape(999.dp),
+                            color = Color(0x1F57CBDE),
+                        ) {
+                            Text(
+                                text = "Cloud Save Sync",
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                color = Color(0xFF7BD8E8),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        }
+
                         Text(
-                            text = "Version Details",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = Color(0xFF8FA7C1),
-                            fontWeight = FontWeight.Medium,
-                            fontFamily = FontFamily.Default,
-                        )
-                        Text(
-                            text = "Local save\n${timestamps.localTimestampLabel}",
-                            style = MaterialTheme.typography.bodyMedium,
+                            text = "A newer cloud save was detected for this title.",
+                            style = MaterialTheme.typography.titleLarge,
                             color = MaterialTheme.colorScheme.onSurface,
+                            fontWeight = FontWeight.SemiBold,
                         )
                         Text(
-                            text = "Cloud save\n${timestamps.cloudTimestampLabel}",
+                            text = "Choose which version to keep before launch. Syncing from cloud will replace the local save data on this device.",
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurface,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.78f),
                         )
+
+                        Surface(
+                            shape = RoundedCornerShape(18.dp),
+                            color = Color(0xFF121922),
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .border(1.dp, Color(0xFF233141), RoundedCornerShape(18.dp)),
+                        ) {
+                            Column(
+                                modifier =
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .padding(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(14.dp),
+                            ) {
+                                Text(
+                                    text = "Version Details",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = Color(0xFF8FA7C1),
+                                    fontWeight = FontWeight.Medium,
+                                )
+                                Text(
+                                    text = "Local save\n${timestamps.localTimestampLabel}",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                                Text(
+                                    text = "Cloud save\n${timestamps.cloudTimestampLabel}",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                            }
+                        }
+
+                        KeepBackupCheckbox(
+                            checked = keepBackup,
+                            onCheckedChange = { v ->
+                                keepBackup = v
+                                onKeepBackupChanged(v)
+                            },
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    if (compactActions) {
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            OutlinedButton(
+                                onClick = { onUseLocal(keepBackup) },
+                                modifier = Modifier.fillMaxWidth(),
+                                colors =
+                                    ButtonDefaults.outlinedButtonColors(
+                                        contentColor = MaterialTheme.colorScheme.onSurface,
+                                    ),
+                                border = BorderStroke(1.dp, Color(0xFF31455B)),
+                            ) {
+                                Text("Keep Local")
+                            }
+                            Button(
+                                onClick = { onUseCloud(keepBackup) },
+                                modifier = Modifier.fillMaxWidth(),
+                                colors =
+                                    ButtonDefaults.buttonColors(
+                                        containerColor = Color(0xFF57CBDE),
+                                        contentColor = Color(0xFF0E141B),
+                                    ),
+                            ) {
+                                Text("Sync from Cloud")
+                            }
+                        }
+                    } else {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            OutlinedButton(
+                                onClick = { onUseLocal(keepBackup) },
+                                modifier = Modifier.weight(1f),
+                                colors =
+                                    ButtonDefaults.outlinedButtonColors(
+                                        contentColor = MaterialTheme.colorScheme.onSurface,
+                                    ),
+                                border = BorderStroke(1.dp, Color(0xFF31455B)),
+                            ) {
+                                Text("Keep Local")
+                            }
+                            Button(
+                                onClick = { onUseCloud(keepBackup) },
+                                modifier = Modifier.weight(1f),
+                                colors =
+                                    ButtonDefaults.buttonColors(
+                                        containerColor = Color(0xFF57CBDE),
+                                        contentColor = Color(0xFF0E141B),
+                                    ),
+                            ) {
+                                Text("Sync from Cloud")
+                            }
+                        }
                     }
                 }
+            }
+        }
+    }
+}
 
-                Spacer(modifier = Modifier.height(4.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    OutlinedButton(
-                        onClick = onUseLocal,
-                        modifier = Modifier.weight(1f),
-                        colors =
-                            ButtonDefaults.outlinedButtonColors(
-                                contentColor = MaterialTheme.colorScheme.onSurface,
-                            ),
-                        border = BorderStroke(1.dp, Color(0xFF31455B)),
-                    ) {
-                        Text("Keep Local")
-                    }
-                    Button(
-                        onClick = onUseCloud,
-                        modifier = Modifier.weight(1f),
-                        colors =
-                            ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFF57CBDE),
-                                contentColor = Color(0xFF0E141B),
-                            ),
-                    ) {
-                        Text("Sync from Cloud")
-                    }
-                }
+@Composable
+private fun KeepBackupCheckbox(
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Surface(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clickable { onCheckedChange(!checked) },
+        shape = RoundedCornerShape(14.dp),
+        color = Color(0xFF121922),
+        border = BorderStroke(1.dp, Color(0xFF233141)),
+    ) {
+        Row(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Checkbox(
+                checked = checked,
+                onCheckedChange = onCheckedChange,
+                colors =
+                    CheckboxDefaults.colors(
+                        checkedColor = Color(0xFF57CBDE),
+                        uncheckedColor = Color(0xFF5F7388),
+                        checkmarkColor = Color(0xFF0E141B),
+                    ),
+            )
+            Spacer(Modifier.widthIn(min = 6.dp))
+            Column(modifier = Modifier.padding(start = 4.dp)) {
+                Text(
+                    text = stringResource(R.string.cloud_saves_keep_replaced_backup),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.Medium,
+                )
+                Text(
+                    text = stringResource(R.string.cloud_saves_keep_replaced_backup_summary),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
+                )
             }
         }
     }

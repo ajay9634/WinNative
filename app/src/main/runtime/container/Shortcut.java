@@ -28,6 +28,7 @@ public class Shortcut {
   private final JSONObject extraData = new JSONObject();
   private Bitmap coverArt; // Changed to private to use getter method
   private String customCoverArtPath; // Path to custom cover art
+  private String architecture;
 
   private static final String COVER_ART_DIR =
       "app_data/cover_arts/"; // Removed leading "/" to keep it relative
@@ -179,6 +180,29 @@ public class Shortcut {
     }
   }
 
+  public String getArchitecture() {
+    if (architecture == null || architecture.isEmpty()) detectArchitecture();
+    return architecture;
+  }
+
+  private void detectArchitecture() {
+    architecture = getExtra("architecture");
+    if (architecture.isEmpty()
+        && this.path != null
+        && !this.path.isEmpty()
+        && !this.path.equalsIgnoreCase("explorer.exe")) {
+      ImageFs imageFs = ImageFs.find(container.getManager().getContext());
+      File exeFile = com.winlator.cmod.runtime.wine.WineUtils.getNativePath(imageFs, this.path);
+      if (exeFile != null && exeFile.exists() && !exeFile.isDirectory()) {
+        architecture = com.winlator.cmod.runtime.wine.PEHelper.getArchitecture(exeFile);
+        if (!architecture.isEmpty()) {
+          putExtra("architecture", architecture);
+          saveData();
+        }
+      }
+    }
+  }
+
   // Getters and setters for coverArt and customCoverArtPath
   public Bitmap getCoverArt() {
     return coverArt;
@@ -219,7 +243,12 @@ public class Shortcut {
   }
 
   public String getSettingExtra(String name, String containerValue) {
-    return usesContainerDefaults() ? containerValue : getExtra(name, containerValue);
+    if (usesContainerDefaults()) return containerValue;
+    // A persisted extra of "" (legacy shortcuts or cleared fields) must not shadow
+    // the container value. Otherwise graphicsDriver/graphicsDriverConfig resolve to
+    // "" and AdrenotoolsManager.setDriverById silently falls back to system drivers.
+    String extra = getExtra(name, "");
+    return extra.isEmpty() ? containerValue : extra;
   }
 
   public void putExtra(String name, String value) {

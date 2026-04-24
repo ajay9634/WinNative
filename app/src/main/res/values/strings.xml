@@ -207,6 +207,16 @@
     <!-- Shortcuts > List -->
     <string name="shortcuts_list_confirm_remove">Do you want to remove this shortcut?</string>
     <string name="shortcuts_list_add_to_home_screen">Add to Home Screen</string>
+    <string name="shortcuts_library_artwork_title">Library Artwork</string>
+    <string name="shortcuts_library_artwork_game_card_title">Game Card Image</string>
+    <string name="shortcuts_library_artwork_grid_title">Grid Image</string>
+    <string name="shortcuts_library_artwork_carousel_title">Carousel Image</string>
+    <string name="shortcuts_library_artwork_list_title">List Image</string>
+    <string name="shortcuts_library_artwork_selected">Selected: %1$s</string>
+    <string name="shortcuts_library_artwork_set">Set image</string>
+    <string name="shortcuts_library_artwork_change">Change image</string>
+    <string name="shortcuts_library_artwork_failed">Failed to load the selected image.</string>
+    <string name="shortcuts_library_artwork_open_source">Open SteamGridDB</string>
     <string name="shortcuts_list_not_available">This shortcut is no longer available. Please delete or recreate it.</string>
     <string name="shortcuts_list_select_a_container">Select a container</string>
     <string name="shortcuts_list_error_opening_settings">Error opening shortcut settings</string>
@@ -225,12 +235,15 @@
     <string name="shortcuts_properties_exec_arguments">Exec Arguments</string>
     <string name="shortcuts_properties_target_path">Target Path</string>
     <string name="shortcuts_properties_disable_xinput">Disable Xinput (For Exclusive M/KB Control)</string>
+    <string name="num_controllers">Number of Controllers</string>
     <string name="shortcuts_properties_exclusive_input">Exclusive Input</string>
     <string name="shortcuts_properties_custom_game_settings">Custom Game Settings</string>
     <string name="shortcuts_properties_use_cold_client">Use ColdClient Launcher</string>
     <string name="shortcuts_properties_use_cold_client_description">ColdClient is the preferred way to handle Steam emulation and DRM. It patches DRM at runtime without modifying game files.</string>
-    <string name="shortcuts_properties_unpack_files">Legacy DRM</string>
-    <string name="shortcuts_properties_unpack_files_description">Strip SteamStub DRM from the exe on disk. Only enable if the game fails to launch without it. ColdClient\'s runtime patcher handles most games automatically.</string>
+    <string name="shortcuts_properties_unpack_files">Unpack Files</string>
+    <string name="shortcuts_properties_unpack_files_description">Strip SteamStub DRM from the game exe on disk. One-time operation — once the exe has been unpacked, this has no runtime cost. Leave enabled by default; turn off only if a specific game breaks because of the strip.</string>
+    <string name="shortcuts_properties_runtime_patcher">Runtime DRM Patcher</string>
+    <string name="shortcuts_properties_runtime_patcher_description">Inject Goldberg\'s runtime DRM patcher DLL into the game on every launch. Works around anti-tamper checks that survive the Unpack Files strip. Significantly reduces FPS — only enable if a game still fails to launch with Unpack Files alone.</string>
     <string name="shortcuts_properties_force_dlc">Force DLC</string>
     <string name="shortcuts_properties_force_dlc_description">Only enable if DLCs are not detected or saves with DLC are not working</string>
     <string name="shortcuts_properties_launch_steam_client_beta">Launch Steam Client (Beta)</string>
@@ -531,6 +544,7 @@ E.g. <b>META</b> for <i>META key</i>, \n
     <string name="session_drawer_pip_subtitle">Shrink the game into a floating window</string>
     <string name="session_drawer_task_manager_subtitle">Inspect and manage running processes</string>
     <string name="session_drawer_magnifier_subtitle">Zoom into the display</string>
+    <string name="session_drawer_magnifier_disabled_native_subtitle">Disabled while Native Rendering is enabled</string>
     <string name="session_drawer_logs_subtitle">Open Wine and Box64 logs</string>
     <string name="session_drawer_exit_subtitle">Close the running session</string>
     <string name="session_drawer_touchscreen_overlay">Touchscreen Overlay</string>
@@ -538,6 +552,24 @@ E.g. <b>META</b> for <i>META key</i>, \n
     <string name="session_drawer_pause">Pause</string>
     <string name="session_drawer_wine_processes_paused">Wine processes are paused</string>
     <string name="session_drawer_pause_all_wine_processes">Pause all Wine processes</string>
+    <string name="session_drawer_controls_section">Controls</string>
+    <string name="session_drawer_session_section">Session</string>
+    <string name="session_drawer_header_subtitle">Quick access to controls, overlays, and session tools</string>
+    <string name="session_drawer_swipe_hint">Swipe away to jump back into the game</string>
+    <string name="session_drawer_hud_summary">Tune overlay visibility and data points</string>
+    <string name="session_drawer_hud_disabled_hint">Turn on the overlay to customize it</string>
+    <string name="session_drawer_hud_alpha">Alpha</string>
+    <string name="session_drawer_hud_scale">Scale</string>
+    <string name="session_drawer_hud_elements">HUD Elements</string>
+    <string name="session_drawer_hud_element_fps">FPS</string>
+    <string name="session_drawer_hud_element_api">API</string>
+    <string name="session_drawer_hud_element_gpu">GPU</string>
+    <string name="session_drawer_hud_element_cpu">CPU</string>
+    <string name="session_drawer_hud_element_battery">BAT</string>
+    <string name="session_drawer_hud_element_graph">Graph</string>
+    <string name="session_drawer_hud_alpha_input_title">Set Alpha</string>
+    <string name="session_drawer_hud_scale_input_title">Set Scale</string>
+    <string name="session_drawer_hud_input_hint">Enter a value from %1$d to %2$d. Values above the limit are clamped.</string>
 
     <!-- Session > Task Manager -->
     <string name="session_task_confirm_end_process">Do you want to end this process?</string>
@@ -607,6 +639,7 @@ E.g. <b>META</b> for <i>META key</i>, \n
     <string name="session_gamepad_left_stick">Left Stick</string>
     <string name="session_gamepad_right_stick">Right Stick</string>
     <string name="session_gamepad_controller_manager">Controller Manager</string>
+    <string name="session_gamepad_enable_vibration">Enable Vibration</string>
     <string name="session_gamepad_player_1">Player 1</string>
     <string name="session_gamepad_player_2">Player 2</string>
     <string name="session_gamepad_player_3">Player 3</string>
@@ -669,11 +702,14 @@ E.g. <b>META</b> for <i>META key</i>, \n
     <string name="session_gyroscope_reset_stick">Reset Stick</string>
     <string name="session_gyroscope_reset_stick_to_center">Reset Stick to Center</string>
     <string name="session_gyroscope_configuration">Gyroscope Configuration</string>
+    <string name="session_gyroscope_experimental_mouse_movement">Experimental Mouse Movement</string>
     <string name="session_gyroscope_x_sensitivity_format">X Sensitivity: %1$d%%</string>
     <string name="session_gyroscope_y_sensitivity_format">Y Sensitivity: %1$d%%</string>
     <string name="session_gyroscope_smoothing_format">Smoothing: %1$d%%</string>
     <string name="session_gyroscope_deadzone_format">Deadzone: %1$d%%</string>
     <string name="session_gyroscope_sensitivity_format">Sensitivity: %1$d%%</string>
+    <string name="session_gyroscope_mouse_scale">Mouse Scale</string>
+    <string name="session_gyroscope_mouse_sensitivity_format">Mouse Scale: %1$d%%</string>
 
     <!-- Settings > General -->
     <string name="settings_general_cursor_speed">Cursor Speed</string>
@@ -759,6 +795,8 @@ E.g. <b>META</b> for <i>META key</i>, \n
     <string name="settings_other_language_system_default">System default</string>
 
     <string name="settings_other_section_integration">Integration</string>
+    <string name="settings_other_setup_wizard_title">Setup Wizard</string>
+    <string name="settings_other_setup_wizard_summary">Open the setup wizard again to review permissions, system files, and default containers.</string>
     <string name="settings_other_checking_for_updates">Checking for updates\u2026</string>
     <string name="settings_other_update_check_cooldown">Please wait %1$ds before checking again</string>
     <string name="settings_other_persistable_permission_failed">Unable to take persistable permissions: %1$s</string>
@@ -945,13 +983,55 @@ Installed path:
     <string name="google_cloud_auto_backup">Cloud Sync Auto Backup</string>
     <string name="google_cloud_auto_backup_summary">Automatically back up game saves to Google Drive each time you exit a game.</string>
     <string name="cloud_saves_title">Cloud Saves</string>
-    <string name="cloud_saves_backup">Backup Cloud Save</string>
-    <string name="cloud_saves_restore">Restore Cloud Save</string>
-    <string name="cloud_sync_title">Cloud Sync</string>
-    <string name="cloud_sync_enabled_summary">Download cloud saves on launch and sync/backup them on exit.</string>
-    <string name="cloud_sync_disabled_summary">Launch this game without cloud save download or exit sync.</string>
+    <string name="cloud_saves_backup">Back up save</string>
+    <string name="cloud_saves_restore">Restore cloud save</string>
+    <string name="cloud_saves_backup_summary">Saves the current version to history for 30 days.</string>
+    <string name="cloud_saves_restore_summary">Pushes your current save to the cloud provider.</string>
+    <string name="cloud_saves_sync_summary">Pull the version %1$s has right now.</string>
+    <string name="cloud_saves_sync_summary_generic">Pull the current cloud version.</string>
+    <string name="cloud_saves_no_backups">No backups yet for this game.</string>
+    <string name="cloud_sync_title">Auto Cloud Sync</string>
+    <string name="cloud_sync_enabled_summary">Download on launch, push on exit.</string>
+    <string name="cloud_sync_disabled_summary">Launch without cloud save download or exit sync.</string>
+    <string name="cloud_saves_offline_mode">Disable Cloud Sync</string>
+    <string name="cloud_saves_offline_mode_summary">Stops all automatic cloud activity for this game.</string>
     <string name="cloud_saves_backing_up">Backing up cloud save\u2026</string>
     <string name="cloud_saves_restoring">Restoring cloud save\u2026</string>
+
+    <!-- Cloud Saves > Provider sync & backup history -->
+    <string name="cloud_saves_sync_from_provider">Sync from %1$s Cloud</string>
+    <string name="cloud_saves_sync_from_provider_generic">Sync from Cloud</string>
+    <string name="cloud_saves_syncing_from_provider">Downloading save from %1$s\u2026</string>
+    <string name="cloud_saves_sync_from_provider_success">%1$s cloud save downloaded.</string>
+    <string name="cloud_saves_sync_from_provider_failed">Could not download save from %1$s.</string>
+    <string name="cloud_saves_history_title">Save History</string>
+    <string name="cloud_saves_history_empty">No previous saves backed up yet. Replaced saves and manual backups will appear here for 30 days.</string>
+    <string name="cloud_saves_history_loading">Loading save history\u2026</string>
+    <string name="cloud_saves_history_sign_in">Sign in to Google to view your save history.</string>
+    <string name="cloud_saves_history_origin_local">local</string>
+    <string name="cloud_saves_history_origin_cloud">cloud</string>
+    <string name="cloud_saves_history_origin_manual">manual</string>
+    <string name="cloud_saves_history_origin_auto">auto</string>
+    <string name="cloud_saves_history_restore">Restore</string>
+    <string name="cloud_saves_history_restore_confirm_title">Restore this backup?</string>
+    <string name="cloud_saves_history_restore_confirm_body">This will replace your current local save with the backup from %1$s.</string>
+    <string name="cloud_saves_history_restore_success">Save restored from backup.</string>
+    <string name="cloud_saves_history_restore_failed">Could not restore this backup.</string>
+    <string name="cloud_saves_keep_replaced_backup">Keep a backup of the replaced save</string>
+    <string name="cloud_saves_keep_replaced_backup_summary">If you change your mind, you can restore it from Save History.</string>
+    <string name="cloud_saves_history_refresh">Refresh</string>
+    <string name="cloud_saves_history_rename">Rename</string>
+    <string name="cloud_saves_history_rename_title">Name this backup</string>
+    <string name="cloud_saves_history_rename_hint">e.g. Boss fight, Before ending</string>
+    <string name="cloud_saves_history_rename_save">Save</string>
+    <string name="cloud_saves_history_rename_clear">Clear</string>
+    <string name="cloud_saves_history_rename_success">Backup renamed.</string>
+    <string name="cloud_saves_history_rename_failed">Could not rename backup.</string>
+    <string name="cloud_saves_history_delete">Delete</string>
+    <string name="cloud_saves_history_delete_confirm_title">Delete this backup?</string>
+    <string name="cloud_saves_history_delete_confirm_body">Permanently remove this backup from Google Drive. This can\'t be undone.</string>
+    <string name="cloud_saves_history_delete_success">Backup deleted.</string>
+    <string name="cloud_saves_history_delete_failed">Could not delete backup.</string>
 
     <!-- Saves > Import and Export -->
     <string name="saves_import_export_title">Saves</string>

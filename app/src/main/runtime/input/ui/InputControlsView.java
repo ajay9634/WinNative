@@ -26,6 +26,7 @@ import android.view.PointerIcon;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
+import java.util.HashMap;
 import androidx.preference.PreferenceManager;
 import com.winlator.cmod.R;
 import com.winlator.cmod.runtime.display.winhandler.MouseEventFlags;
@@ -65,8 +66,9 @@ public class InputControlsView extends View {
   private XServer xServer;
   private final Bitmap[] icons = new Bitmap[17];
   private Timer mouseMoveTimer;
-  private final PointF mouseMoveOffset = new PointF();
-  private boolean showTouchscreenControls = true;
+  private volatile float mouseMoveOffsetX = 0f;
+  private volatile float mouseMoveOffsetY = 0f;
+  private boolean showTouchscreenControls = false;
 
   private Handler timeoutHandler; // Reference to the activity's timeout handler
   private Runnable hideControlsRunnable; // Runnable to hide the controls
@@ -188,7 +190,7 @@ public class InputControlsView extends View {
       stickElement.draw(canvas);
     }
 
-    if (profile != null && showTouchscreenControls && !isFocusedOnStick()) {
+    if (profile != null && (showTouchscreenControls || editMode) && !isFocusedOnStick()) {
       if (!profile.isElementsLoaded()) profile.loadElements(this);
       for (ControlElement element : profile.getElements()) {
         element.draw(canvas);
@@ -328,6 +330,7 @@ public class InputControlsView extends View {
   }
 
   public synchronized void setProfile(ControlsProfile profile) {
+    releaseActiveTouchElements();
     if (profile != null) {
       this.profile = profile;
       deselectAllElements();
@@ -340,7 +343,20 @@ public class InputControlsView extends View {
   }
 
   public void setShowTouchscreenControls(boolean showTouchscreenControls) {
+    if (this.showTouchscreenControls == showTouchscreenControls) {
+      return;
+    }
+    if (!showTouchscreenControls) {
+      releaseActiveTouchElements();
+    }
     this.showTouchscreenControls = showTouchscreenControls;
+    invalidate();
+  }
+
+  private void dispatchUnhandledTouch(MotionEvent event) {
+    if (touchpadView != null) {
+      touchpadView.onTouchEvent(event);
+    }
   }
 
   public int getPrimaryColor() {
@@ -389,12 +405,27 @@ public class InputControlsView extends View {
     createMouseMoveTimer();
   }
 
-  private boolean hasMouseLeftButtonElement() {
+  public boolean hasMouseLeftButtonElement() {
     if (profile == null) return false;
     for (ControlElement element : profile.getElements()) {
       if (element.getBindingAt(0) == Binding.MOUSE_LEFT_BUTTON) return true;
     }
     return false;
+  }
+
+  private void releaseActiveTouchElements() {
+    for (int i = 0; i < activeTouchElements.size(); i++) {
+      int activePointerId = activeTouchElements.keyAt(i);
+      ControlElement activeElement = activeTouchElements.valueAt(i);
+      if (activeElement != null) {
+        activeElement.handleTouchUp(activePointerId);
+      }
+    }
+    activeTouchElements.clear();
+  }
+
+  public synchronized void cancelActiveTouches() {
+    releaseActiveTouchElements();
   }
 
   public int getMaxWidth() {
@@ -420,19 +451,17 @@ public class InputControlsView extends View {
           new TimerTask() {
             @Override
             public void run() {
-              if (mouseMoveOffset.x != 0
-                  || mouseMoveOffset.y
-                      != 0) { // Only move if there's an offsete if there's an offset
+              if (mouseMoveOffsetX != 0 || mouseMoveOffsetY != 0) {
                 if (xServer.isRelativeMouseMovement())
                   winHandler.mouseEvent(
                       MouseEventFlags.MOVE,
-                      (int) (mouseMoveOffset.x * cursorSpeed * 10),
-                      (int) (mouseMoveOffset.y * cursorSpeed * 10),
+                      (int) (mouseMoveOffsetX * cursorSpeed * 20),
+                      (int) (mouseMoveOffsetY * cursorSpeed * 20),
                       0);
                 else
                   xServer.injectPointerMoveDelta(
-                      (int) (mouseMoveOffset.x * cursorSpeed * 10),
-                      (int) (mouseMoveOffset.y * cursorSpeed * 10));
+                      (int) (mouseMoveOffsetX * cursorSpeed * 20),
+                      (int) (mouseMoveOffsetY * cursorSpeed * 20));
               }
             }
           },
@@ -472,6 +501,8 @@ public class InputControlsView extends View {
   //        }
   //    }
 
+  private final HashMap<String, int[]> lastAxisSign = new HashMap<>();
+
   private void processJoystickInput(ExternalController controller) {
     final int[] axes = {
       MotionEvent.AXIS_X, MotionEvent.AXIS_Y,
@@ -487,22 +518,41 @@ public class InputControlsView extends View {
       controller.state.getDPadY()
     };
 
+    int[] lastSigns = lastAxisSign.get(controller.getId());
+    if (lastSigns == null) {
+      lastSigns = new int[axes.length];
+      lastAxisSign.put(controller.getId(), lastSigns);
+    }
+
     for (int i = 0; i < axes.length; i++) {
       float value = values[i];
-      if (Math.abs(value) > ControlElement.STICK_DEAD_ZONE) {
-        byte sign = Mathf.sign(value);
-        int keyCode = ExternalControllerBinding.getKeyCodeForAxis(axes[i], sign);
-        ExternalControllerBinding controllerBinding = controller.getControllerBinding(keyCode);
-        if (controllerBinding != null) {
-          handleInputEvent(controller, controllerBinding.getBinding(), true, value, false);
-        }
-      } else {
-        for (byte sign = -1; sign <= 1; sign += 2) {
-          int keyCode = ExternalControllerBinding.getKeyCodeForAxis(axes[i], sign);
-          ExternalControllerBinding controllerBinding = controller.getControllerBinding(keyCode);
-          if (controllerBinding != null) {
-            handleInputEvent(controller, controllerBinding.getBinding(), false, value, false);
+      int currentSign = Math.abs(value) > ControlElement.STICK_DEAD_ZONE ? (int) Mathf.sign(value) : 0;
+      int lastSign = lastSigns[i];
+
+      if (currentSign != lastSign) {
+        if (lastSign != 0) {
+          int oldKeyCode = ExternalControllerBinding.getKeyCodeForAxis(axes[i], (byte) lastSign);
+          ExternalControllerBinding oldBinding = controller.getControllerBinding(oldKeyCode);
+          if (oldBinding != null) {
+            handleInputEvent(controller, oldBinding.getBinding(), false, 0, false);
           }
+        }
+
+        if (currentSign != 0) {
+          int newKeyCode = ExternalControllerBinding.getKeyCodeForAxis(axes[i], (byte) currentSign);
+          ExternalControllerBinding newBinding = controller.getControllerBinding(newKeyCode);
+          if (newBinding != null) {
+            handleInputEvent(controller, newBinding.getBinding(), true, value, false);
+          }
+        }
+        lastSigns[i] = currentSign;
+      } else if (currentSign != 0) {
+        // Sign hasn't changed, but deflection might have.
+        // If it's a mouse move binding, we MUST update the offset for speed.
+        int keyCode = ExternalControllerBinding.getKeyCodeForAxis(axes[i], (byte) currentSign);
+        ExternalControllerBinding binding = controller.getControllerBinding(keyCode);
+        if (binding != null && binding.getBinding().isMouseMove()) {
+          handleInputEvent(controller, binding.getBinding(), true, value, false);
         }
       }
     }
@@ -560,7 +610,8 @@ public class InputControlsView extends View {
     if (!editMode && profile != null) {
       ExternalController controller = profile.getController(event.getDeviceId());
 
-      if (controller != null && controller.updateStateFromMotionEvent(event)) {
+      if (controller != null) {
+        controller.updateStateFromMotionEvent(event);
         ExternalControllerBinding controllerBinding;
 
         controllerBinding = controller.getControllerBinding(KeyEvent.KEYCODE_BUTTON_L2);
@@ -590,9 +641,6 @@ public class InputControlsView extends View {
   public boolean onTouchEvent(MotionEvent event) {
 
     boolean hapticsEnabled = preferences.getBoolean("touchscreen_haptics_enabled", true);
-
-    // Reset the timeout when touch events occur within InputControlsView
-    resetTouchscreenTimeout();
 
     if (editMode && readyToDraw) {
       switch (event.getAction()) {
@@ -635,6 +683,11 @@ public class InputControlsView extends View {
     }
 
     if (!editMode && profile != null) {
+      if (!showTouchscreenControls) {
+        dispatchUnhandledTouch(event);
+        return true;
+      }
+
       int actionIndex = event.getActionIndex();
       int pointerId = event.getPointerId(actionIndex);
       int actionMasked = event.getActionMasked();
@@ -672,7 +725,7 @@ public class InputControlsView extends View {
                 break;
               }
             }
-            if (!handled) touchpadView.onTouchEvent(event);
+            if (!handled) dispatchUnhandledTouch(event);
             break;
           }
         case MotionEvent.ACTION_MOVE:
@@ -694,7 +747,7 @@ public class InputControlsView extends View {
                   }
                 }
               }
-              if (!handled) touchpadView.onTouchEvent(event);
+              if (!handled) dispatchUnhandledTouch(event);
             }
             break;
           }
@@ -713,32 +766,18 @@ public class InputControlsView extends View {
                 }
               }
             }
-            if (!handled) touchpadView.onTouchEvent(event);
+            if (!handled) dispatchUnhandledTouch(event);
             break;
           }
         case MotionEvent.ACTION_CANCEL:
           {
-            for (int i = 0; i < activeTouchElements.size(); i++) {
-              int activePointerId = activeTouchElements.keyAt(i);
-              ControlElement activeElement = activeTouchElements.valueAt(i);
-              if (activeElement != null) activeElement.handleTouchUp(activePointerId);
-            }
-            activeTouchElements.clear();
-            touchpadView.onTouchEvent(event);
+            releaseActiveTouchElements();
+            dispatchUnhandledTouch(event);
             break;
           }
       }
     }
     return true;
-  }
-
-  private void resetTouchscreenTimeout() {
-    if (timeoutHandler != null && hideControlsRunnable != null) {
-      // Cancel any pending hide requests
-      timeoutHandler.removeCallbacks(hideControlsRunnable);
-      // Post a new request to hide the controls after 5 seconds
-      timeoutHandler.postDelayed(hideControlsRunnable, 5000); // Adjust timeout as necessary
-    }
   }
 
   public void invalidateControlElement(ControlElement element) {
@@ -829,54 +868,72 @@ public class InputControlsView extends View {
       boolean sendUpdate) {
     WinHandler winHandler = xServer != null ? xServer.getWinHandler() : null;
     if (binding.isGamepad()) {
+      if (profile == null && controller == null) return;
       GamepadState state =
           (controller != null) ? controller.remappedState : profile.getGamepadState();
+      boolean stateChanged = false;
 
       int buttonIdx = binding.ordinal() - Binding.GAMEPAD_BUTTON_A.ordinal();
       if (buttonIdx <= ExternalController.IDX_BUTTON_R2) {
-        if (buttonIdx == ExternalController.IDX_BUTTON_L2)
-          state.triggerL = isActionDown ? (offset != 0 ? offset : 1.0f) : 0f;
-        else if (buttonIdx == ExternalController.IDX_BUTTON_R2)
-          state.triggerR = isActionDown ? (offset != 0 ? offset : 1.0f) : 0f;
-        else state.setPressed(buttonIdx, isActionDown);
+        if (buttonIdx == ExternalController.IDX_BUTTON_L2) {
+          float value = isActionDown ? (offset != 0 ? offset : 1.0f) : 0f;
+          stateChanged = Float.compare(state.triggerL, value) != 0;
+          state.triggerL = value;
+        } else if (buttonIdx == ExternalController.IDX_BUTTON_R2) {
+          float value = isActionDown ? (offset != 0 ? offset : 1.0f) : 0f;
+          stateChanged = Float.compare(state.triggerR, value) != 0;
+          state.triggerR = value;
+        } else {
+          stateChanged = state.isPressed(buttonIdx) != isActionDown;
+          if (stateChanged) state.setPressed(buttonIdx, isActionDown);
+        }
       } else if (binding == Binding.GAMEPAD_LEFT_THUMB_UP
           || binding == Binding.GAMEPAD_LEFT_THUMB_DOWN) {
         float val = (isActionDown && offset == 0) ? 1.0f : Math.abs(offset);
-        state.thumbLY = isActionDown ? (binding == Binding.GAMEPAD_LEFT_THUMB_UP ? -val : val) : 0;
+        float value = isActionDown ? (binding == Binding.GAMEPAD_LEFT_THUMB_UP ? -val : val) : 0;
+        stateChanged = Float.compare(state.thumbLY, value) != 0;
+        state.thumbLY = value;
       } else if (binding == Binding.GAMEPAD_LEFT_THUMB_LEFT
           || binding == Binding.GAMEPAD_LEFT_THUMB_RIGHT) {
         float val = (isActionDown && offset == 0) ? 1.0f : Math.abs(offset);
-        state.thumbLX =
-            isActionDown ? (binding == Binding.GAMEPAD_LEFT_THUMB_LEFT ? -val : val) : 0;
+        float value = isActionDown ? (binding == Binding.GAMEPAD_LEFT_THUMB_LEFT ? -val : val) : 0;
+        stateChanged = Float.compare(state.thumbLX, value) != 0;
+        state.thumbLX = value;
       } else if (binding == Binding.GAMEPAD_RIGHT_THUMB_UP
           || binding == Binding.GAMEPAD_RIGHT_THUMB_DOWN) {
         float val = (isActionDown && offset == 0) ? 1.0f : Math.abs(offset);
-        state.thumbRY = isActionDown ? (binding == Binding.GAMEPAD_RIGHT_THUMB_UP ? -val : val) : 0;
+        float value = isActionDown ? (binding == Binding.GAMEPAD_RIGHT_THUMB_UP ? -val : val) : 0;
+        stateChanged = Float.compare(state.thumbRY, value) != 0;
+        state.thumbRY = value;
       } else if (binding == Binding.GAMEPAD_RIGHT_THUMB_LEFT
           || binding == Binding.GAMEPAD_RIGHT_THUMB_RIGHT) {
         float val = (isActionDown && offset == 0) ? 1.0f : Math.abs(offset);
-        state.thumbRX =
+        float value =
             isActionDown ? (binding == Binding.GAMEPAD_RIGHT_THUMB_LEFT ? -val : val) : 0;
+        stateChanged = Float.compare(state.thumbRX, value) != 0;
+        state.thumbRX = value;
       } else if (binding == Binding.GAMEPAD_DPAD_UP
           || binding == Binding.GAMEPAD_DPAD_RIGHT
           || binding == Binding.GAMEPAD_DPAD_DOWN
           || binding == Binding.GAMEPAD_DPAD_LEFT) {
-        state.dpad[binding.ordinal() - Binding.GAMEPAD_DPAD_UP.ordinal()] = isActionDown;
+        int dpadIndex = binding.ordinal() - Binding.GAMEPAD_DPAD_UP.ordinal();
+        stateChanged = state.dpad[dpadIndex] != isActionDown;
+        state.dpad[dpadIndex] = isActionDown;
       }
 
-      if (winHandler != null && sendUpdate) {
+      if (winHandler != null && sendUpdate && stateChanged) {
         if (controller != null) winHandler.sendGamepadState(controller);
         else winHandler.sendGamepadState();
       }
     } else {
       if (binding == Binding.MOUSE_MOVE_LEFT || binding == Binding.MOUSE_MOVE_RIGHT) {
-        mouseMoveOffset.x =
+        mouseMoveOffsetX =
             isActionDown
                 ? (offset != 0 ? offset : (binding == Binding.MOUSE_MOVE_LEFT ? -1 : 1))
                 : 0;
         if (isActionDown) createMouseMoveTimer();
       } else if (binding == Binding.MOUSE_MOVE_DOWN || binding == Binding.MOUSE_MOVE_UP) {
-        mouseMoveOffset.y =
+        mouseMoveOffsetY =
             isActionDown ? (offset != 0 ? offset : (binding == Binding.MOUSE_MOVE_UP ? -1 : 1)) : 0;
         if (isActionDown) createMouseMoveTimer();
       } else {

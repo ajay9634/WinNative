@@ -178,8 +178,14 @@ public class GuestProgramLauncherComponent extends EnvironmentComponent {
     File rootDir = imageFs.getRootDir();
     StringBuilder output = new StringBuilder();
 
-    // Use the instance envVars if available, otherwise new
-    EnvVars envVars = (this.envVars != null) ? new EnvVars(this.envVars.toString()) : new EnvVars();
+    // Clone the instance envVars by copying the map directly. Using
+    // new EnvVars(this.envVars.toString()) would fail because toString() joins
+    // with spaces and putAll(String) splits on spaces, destroying values that
+    // contain spaces (e.g., driver paths like "Turnip MTR v3.2.2-p Axxx/").
+    EnvVars envVars = new EnvVars();
+    if (this.envVars != null) {
+      envVars.putAll(this.envVars);
+    }
 
     envVars.put("HOME", imageFs.home_path);
     envVars.put("USER", ImageFs.USER);
@@ -206,6 +212,11 @@ public class GuestProgramLauncherComponent extends EnvironmentComponent {
         "ANDROID_SYSVSHM_SERVER",
         imageFs.getRootDir().getPath() + UnixSocketConfig.SYSVSHM_SERVER_PATH);
     envVars.put("FONTCONFIG_PATH", imageFs.getRootDir().getPath() + "/usr/etc/fonts");
+    // Env vars required for shell commands under the Bionic program launcher
+    envVars.put("WINE_NO_DUPLICATE_EXPLORER", "1");
+    envVars.put("PREFIX", imageFs.getRootDir().getPath() + "/usr");
+    envVars.put("WINE_DISABLE_FULLSCREEN_HACK", "1");
+    envVars.put("SteamGameId", "0");
 
     File libDir = imageFs.getLibDir();
     File sysvshm64 = ensureImageFsNativeLibrary(context, imageFs, "libandroid-sysvshm.so");
@@ -229,12 +240,27 @@ public class GuestProgramLauncherComponent extends EnvironmentComponent {
     envVars.put("WINEESYNC_WINLATOR", "1");
     mergeExternalEnvVars(envVars, envVars.get("LD_PRELOAD"), envVars.get("FAKE_EVDEV_DIR"));
 
-    // box64 may be at /usr/bin or /usr/local/bin depending on installation
-    String box64Path = rootDir.getPath() + "/usr/bin/box64";
-    if (!new File(box64Path).exists()) {
-      box64Path = rootDir.getPath() + "/usr/local/bin/box64";
+    // For arm64ec Wine builds the wine binary is native ARM64 — call it directly
+    // with a fully-qualified path. Wrapping with box64 causes it to fail ELF
+    // header detection and adds overhead.
+    // For non-arm64ec, box64 translates the x86_64 Wine binary.
+    String finalCommand;
+    if (wineInfo != null && wineInfo.isArm64EC()) {
+      // Resolve bare "wine" or "wineserver" to full path under the Wine bin directory
+      if (command.startsWith("wine ") || command.equals("wine")) {
+        finalCommand = winePath + "/wine" + command.substring(4);
+      } else if (command.startsWith("wineserver ") || command.equals("wineserver")) {
+        finalCommand = winePath + "/wineserver" + command.substring(10);
+      } else {
+        finalCommand = command;
+      }
+    } else {
+      String box64Path = rootDir.getPath() + "/usr/bin/box64";
+      if (!new File(box64Path).exists()) {
+        box64Path = rootDir.getPath() + "/usr/local/bin/box64";
+      }
+      finalCommand = box64Path + " " + command;
     }
-    String finalCommand = box64Path + " " + command;
     try {
       Log.d("GuestProgramLauncherComponent", "Shell command is " + finalCommand);
       java.lang.Process process =
@@ -732,20 +758,41 @@ public class GuestProgramLauncherComponent extends EnvironmentComponent {
       ld_preload = ld_preload + fakeinputDest.getAbsolutePath();
     }
 
+    // Samsung and some other OEMs ship a Vulkan ICD dep chain ending in
+    // /system_ext/lib64/libvendorutils.so that references OpenSSL's BIO_flush.
+    // Without libcrypto already mapped, vkCreateInstance fails with res=-9 and
+    // DXVK aborts with "Required Vulkan extension VK_KHR_surface not supported".
+    //
+    // Only /system and /system_ext are in the default linker namespace's
+    // permitted_paths; the conscrypt APEX is not, so preloading from it
+    // blocks the whole execve with a linker namespace error. Fall back to
+    // the imagefs copy as a last resort.
+    File[] cryptoCandidates = new File[] {
+        new File("/system/lib64/libcrypto.so"),
+        new File("/system_ext/lib64/libcrypto.so"),
+        new File(imageFs.getLibDir(), "libcrypto.so.3"),
+    };
+    for (File c : cryptoCandidates) {
+      if (c.exists()) {
+        if (!ld_preload.isEmpty()) ld_preload = ld_preload + ":";
+        ld_preload = ld_preload + c.getAbsolutePath();
+        break;
+      }
+    }
+
     File devInputDir = new File(imageFs.getRootDir(), "dev/input");
     devInputDir.mkdirs();
-    // Pre-create all 4 event files so Wine's winebus/SDL can detect
-    // up to 4 controllers on startup.
-    for (int i = 0; i < 4; i++) {
-      File eventFile = new File(devInputDir, "event" + i);
-      if (!eventFile.exists()) {
-        try {
-          eventFile.createNewFile();
-        } catch (Exception e) {
-        }
+    // XServerDisplayActivity pre-creates the configured controller count after the
+    // shortcut is loaded. Keep event0 available here as a minimum fallback.
+    File event0 = new File(devInputDir, "event0");
+    if (!event0.exists()) {
+      try {
+        event0.createNewFile();
+      } catch (Exception e) {
       }
     }
     envVars.put("FAKE_EVDEV_DIR", devInputDir.getAbsolutePath());
+    envVars.put("FAKE_EVDEV_VIBRATION", "1");
 
     // Ensure Proton-flavoured winebus.sys uses the evdev/SDL path that
     // libfakeinput.so hooks, and does not filter out our fake gamepad.

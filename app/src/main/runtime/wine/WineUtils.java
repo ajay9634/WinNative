@@ -651,6 +651,36 @@ public abstract class WineUtils {
     }
   }
 
+  private static final String[] XINPUT_DLLS = {
+    "xinput1_1.dll", "xinput1_2.dll", "xinput1_3.dll",
+    "xinput1_4.dll", "xinput9_1_0.dll", "xinputuap.dll"
+  };
+
+  public static void ensureControllerDllOverrides(Container container) {
+    if (container == null) return;
+
+    File userRegFile = new File(container.getRootDir(), ".wine/user.reg");
+    if (!userRegFile.isFile()) return;
+
+    final String dllOverridesKey = "Software\\Wine\\DllOverrides";
+    final String[] dinputLibs = {"dinput", "dinput8"};
+
+    try (WineRegistryEditor registryEditor = new WineRegistryEditor(userRegFile)) {
+      for (String name : dinputLibs) {
+        if (!"builtin,native".equals(registryEditor.getStringValue(dllOverridesKey, name, ""))) {
+          registryEditor.setStringValue(dllOverridesKey, name, "builtin,native");
+        }
+      }
+
+      for (String dll : XINPUT_DLLS) {
+        String name = dll.substring(0, dll.length() - 4);
+        if (!"builtin,native".equals(registryEditor.getStringValue(dllOverridesKey, name, ""))) {
+          registryEditor.setStringValue(dllOverridesKey, name, "builtin,native");
+        }
+      }
+    }
+  }
+
   /** Registers core Windows fonts and Wine fonts in the registry. */
   private static void setupSystemFonts(WineRegistryEditor registryEditor) {
     Log.d("WineUtils", "Setting up system fonts");
@@ -1160,10 +1190,14 @@ public abstract class WineUtils {
         if (selection == 1) {
           if (servicesList.contains(service)
               && !name.equals("winebus")
-              && !name.equals("winehid")) {
+              && !name.equals("winehid")
+              && !name.equals("PlugPlay")) {
             value = 4;
           }
-        } else if (selection == 2 && !name.equals("winebus") && !name.equals("winehid")) {
+        } else if (selection == 2
+            && !name.equals("winebus")
+            && !name.equals("winehid")
+            && !name.equals("PlugPlay")) {
           value = 4;
         }
         registryEditor.setDwordValue(

@@ -1,5 +1,5 @@
 /* Settings > Components screen — Jetpack Compose / Material3.
- * Scrolling delegated to a View-level ScrollView in ContentsFragment. */
+ * Uses a LazyColumn for the main content. */
 package com.winlator.cmod.feature.settings
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.Crossfade
@@ -15,18 +15,27 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -52,6 +61,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -134,6 +144,11 @@ fun ComponentsScreen(
     onToggleAutoCreateContainer: (Boolean) -> Unit,
 ) {
     var itemPendingRemoval by remember { mutableStateOf<ComponentItem?>(null) }
+    val layoutDirection = LocalLayoutDirection.current
+    val navBarPadding = WindowInsets.navigationBars.asPaddingValues()
+    val navBarStartPadding = navBarPadding.calculateStartPadding(layoutDirection)
+    val navBarEndPadding = navBarPadding.calculateEndPadding(layoutDirection)
+    val navBarBottomPadding = navBarPadding.calculateBottomPadding()
 
     itemPendingRemoval?.let { item ->
         ConfirmDialog(
@@ -153,80 +168,86 @@ fun ComponentsScreen(
         DownloadProgressDialog(progress = progress)
     }
 
-    Column(
+    LazyColumn(
         modifier =
             Modifier
-                .fillMaxWidth()
-                .wrapContentHeight()
-                .background(BgDark)
-                .padding(horizontal = 16.dp, vertical = 16.dp),
+                .fillMaxSize()
+                .background(BgDark),
+        contentPadding =
+            PaddingValues(
+                start = 16.dp + navBarStartPadding,
+                end = 16.dp + navBarEndPadding,
+                top = 16.dp,
+                bottom = 4.dp + navBarBottomPadding,
+            ),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        HeroHeader(
-            installedCount = state.installed.size,
-            availableCount = state.available.size,
-            autoCreateContainer = state.autoCreateContainer,
-            onInstallFromFile = onInstallFromFile,
-            onToggleAutoCreateContainer = onToggleAutoCreateContainer,
-        )
+        item(key = "hero_header") {
+            HeroHeader(
+                installedCount = state.installed.size,
+                availableCount = state.available.size,
+                autoCreateContainer = state.autoCreateContainer,
+                onInstallFromFile = onInstallFromFile,
+                onToggleAutoCreateContainer = onToggleAutoCreateContainer,
+            )
+        }
 
-        TypeTabsCard(
-            currentType = state.currentType,
-            onTypeSelected = onTypeSelected,
-        )
+        item(key = "type_tabs") {
+            TypeTabsCard(
+                currentType = state.currentType,
+                onTypeSelected = onTypeSelected,
+            )
+        }
 
-        AnimatedContent(
-            targetState = state,
-            transitionSpec = {
-                (
-                    fadeIn(animationSpec = tween(durationMillis = 140, easing = FastOutSlowInEasing))
-                        togetherWith
-                        fadeOut(animationSpec = tween(durationMillis = 140, easing = FastOutSlowInEasing))
-                ).using(
-                    SizeTransform(clip = false) { _, _ ->
-                        tween(durationMillis = 140, easing = FastOutSlowInEasing)
-                    },
-                )
-            },
-            contentKey = { it.currentType },
-            label = "componentsTypeContent",
-        ) { snapshot ->
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (snapshot.installed.isEmpty() && snapshot.available.isEmpty()) {
-                    EmptyState()
-                }
-
-                if (snapshot.installed.isNotEmpty()) {
-                    SectionLabel(
-                        text = stringResource(R.string.common_ui_installed),
-                        modifier = Modifier.padding(top = 8.dp),
-                    )
-                    snapshot.installed.forEach { item ->
-                        ComponentItemCard(
-                            item = item,
-                            onDownload = { onDownloadItem(item) },
-                            onRemove = { itemPendingRemoval = item },
-                        )
-                    }
-                }
-
-                if (snapshot.available.isNotEmpty()) {
-                    SectionLabel(
-                        text = stringResource(R.string.common_ui_available),
-                        modifier = Modifier.padding(top = 8.dp),
-                    )
-                    snapshot.available.forEach { item ->
-                        ComponentItemCard(
-                            item = item,
-                            onDownload = { onDownloadItem(item) },
-                            onRemove = { itemPendingRemoval = item },
-                        )
-                    }
-                }
+        if (state.installed.isEmpty() && state.available.isEmpty()) {
+            item(key = "empty_${state.currentType.name}") {
+                EmptyState()
             }
         }
 
-        Spacer(Modifier.height(24.dp))
+        if (state.installed.isNotEmpty()) {
+            item(key = "installed_section_${state.currentType.name}") {
+                SectionLabel(
+                    text = stringResource(R.string.common_ui_installed),
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+            }
+            items(
+                items = state.installed,
+                key = { item -> "installed_${state.currentType.name}_${item.key}" },
+                contentType = { "installedComponentCard" },
+            ) { item ->
+                ComponentItemCard(
+                    item = item,
+                    onDownload = { onDownloadItem(item) },
+                    onRemove = { itemPendingRemoval = item },
+                )
+            }
+        }
+
+        if (state.available.isNotEmpty()) {
+            item(key = "available_section_${state.currentType.name}") {
+                SectionLabel(
+                    text = stringResource(R.string.common_ui_available),
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+            }
+            items(
+                items = state.available,
+                key = { item -> "available_${state.currentType.name}_${item.key}" },
+                contentType = { "availableComponentCard" },
+            ) { item ->
+                ComponentItemCard(
+                    item = item,
+                    onDownload = { onDownloadItem(item) },
+                    onRemove = { itemPendingRemoval = item },
+                )
+            }
+        }
+
+        item(key = "bottom_spacer") {
+            Spacer(Modifier.height(24.dp))
+        }
     }
 }
 
@@ -242,7 +263,7 @@ private fun HeroHeader(
     onInstallFromFile: () -> Unit,
     onToggleAutoCreateContainer: (Boolean) -> Unit,
 ) {
-    Box(
+    BoxWithConstraints(
         modifier =
             Modifier
                 .fillMaxWidth()
@@ -251,53 +272,115 @@ private fun HeroHeader(
                 .border(1.dp, CardBorder, RoundedCornerShape(14.dp))
                 .padding(horizontal = 14.dp, vertical = 11.dp),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(
-                modifier =
-                    Modifier
-                        .size(34.dp)
-                        .clip(RoundedCornerShape(9.dp))
-                        .background(IconBoxBg),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.Extension,
-                    contentDescription = null,
-                    tint = Accent,
-                    modifier = Modifier.size(17.dp),
-                )
-            }
-            Spacer(Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = stringResource(R.string.settings_content_components),
-                    color = TextPrimary,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Spacer(Modifier.height(2.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    CountPill(label = stringResource(R.string.common_ui_installed), count = installedCount)
-                    Spacer(Modifier.width(6.dp))
-                    CountPill(label = stringResource(R.string.common_ui_available), count = availableCount)
+        val stackActionsBelowCounts = maxWidth < 620.dp
+
+        if (stackActionsBelowCounts) {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(
+                        modifier =
+                            Modifier
+                                .size(34.dp)
+                                .clip(RoundedCornerShape(9.dp))
+                                .background(IconBoxBg),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Extension,
+                            contentDescription = null,
+                            tint = Accent,
+                            modifier = Modifier.size(17.dp),
+                        )
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = stringResource(R.string.settings_content_components),
+                            color = TextPrimary,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Spacer(Modifier.height(2.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            CountPill(label = stringResource(R.string.common_ui_installed), count = installedCount)
+                            Spacer(Modifier.width(6.dp))
+                            CountPill(label = stringResource(R.string.common_ui_available), count = availableCount)
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(10.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    ToggleChip(
+                        label = stringResource(R.string.settings_content_auto_create_container),
+                        enabled = autoCreateContainer,
+                        onToggle = { onToggleAutoCreateContainer(!autoCreateContainer) },
+                    )
+                    SmallPillButton(
+                        label = stringResource(R.string.settings_content_install),
+                        icon = Icons.Outlined.Upload,
+                        tint = Accent,
+                        onClick = onInstallFromFile,
+                    )
                 }
             }
-            Spacer(Modifier.width(10.dp))
-            ToggleChip(
-                label = stringResource(R.string.settings_content_auto_create_container),
-                enabled = autoCreateContainer,
-                onToggle = { onToggleAutoCreateContainer(!autoCreateContainer) },
-            )
-            Spacer(Modifier.width(8.dp))
-            SmallPillButton(
-                label = stringResource(R.string.settings_content_install),
-                icon = Icons.Outlined.Upload,
-                tint = Accent,
-                onClick = onInstallFromFile,
-            )
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(
+                    modifier =
+                        Modifier
+                            .size(34.dp)
+                            .clip(RoundedCornerShape(9.dp))
+                            .background(IconBoxBg),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Extension,
+                        contentDescription = null,
+                        tint = Accent,
+                        modifier = Modifier.size(17.dp),
+                    )
+                }
+                Spacer(Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.settings_content_components),
+                        color = TextPrimary,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CountPill(label = stringResource(R.string.common_ui_installed), count = installedCount)
+                        Spacer(Modifier.width(6.dp))
+                        CountPill(label = stringResource(R.string.common_ui_available), count = availableCount)
+                    }
+                }
+                Spacer(Modifier.width(10.dp))
+                ToggleChip(
+                    label = stringResource(R.string.settings_content_auto_create_container),
+                    enabled = autoCreateContainer,
+                    onToggle = { onToggleAutoCreateContainer(!autoCreateContainer) },
+                )
+                Spacer(Modifier.width(8.dp))
+                SmallPillButton(
+                    label = stringResource(R.string.settings_content_install),
+                    icon = Icons.Outlined.Upload,
+                    tint = Accent,
+                    onClick = onInstallFromFile,
+                )
+            }
         }
     }
 }
@@ -364,6 +447,8 @@ private fun CountPill(
             color = TextSecondary,
             fontSize = 10.sp,
             fontWeight = FontWeight.Medium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }

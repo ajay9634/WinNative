@@ -1,5 +1,5 @@
 /* Settings > Debug screen — Jetpack Compose / Material3.
- * Scrolling delegated to a View-level ScrollView in DebugFragment, matching StoresFragment. */
+ * Uses a LazyColumn for the main content. */
 package com.winlator.cmod.feature.settings
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
@@ -8,26 +8,31 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -60,6 +65,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -110,6 +116,11 @@ fun DebugScreen(
     onShareLogs: () -> Unit,
 ) {
     var showChannelsDialog by remember { mutableStateOf(false) }
+    val layoutDirection = LocalLayoutDirection.current
+    val navBarPadding = WindowInsets.navigationBars.asPaddingValues()
+    val navBarStartPadding = navBarPadding.calculateStartPadding(layoutDirection)
+    val navBarEndPadding = navBarPadding.calculateEndPadding(layoutDirection)
+    val navBarBottomPadding = navBarPadding.calculateBottomPadding()
 
     if (showChannelsDialog) {
         WineChannelsDialog(
@@ -123,91 +134,124 @@ fun DebugScreen(
         )
     }
 
-    Column(
+    LazyColumn(
         modifier =
             Modifier
-                .fillMaxWidth()
-                .wrapContentHeight()
-                .background(BgDark)
-                .padding(horizontal = 16.dp, vertical = 16.dp),
+                .fillMaxSize()
+                .background(BgDark),
+        contentPadding =
+            PaddingValues(
+                start = 16.dp + navBarStartPadding,
+                end = 16.dp + navBarEndPadding,
+                top = 16.dp,
+                bottom = 4.dp + navBarBottomPadding,
+            ),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        SectionLabel(stringResource(R.string.common_ui_application))
+        item(key = "application_section") {
+            SectionLabel(stringResource(R.string.common_ui_application))
+        }
 
-        SettingsToggleCard(
-            title = stringResource(R.string.common_ui_application),
-            subtitle = stringResource(R.string.settings_debug_log_to_file_desc),
-            icon = Icons.Outlined.BugReport,
-            accentColor = Warning,
-            checked = state.appDebug,
-            onCheckedChange = onAppDebugChanged,
-        )
+        item(key = "app_debug_card") {
+            SettingsToggleCard(
+                title = stringResource(R.string.common_ui_application),
+                subtitle = stringResource(R.string.settings_debug_log_to_file_desc),
+                icon = Icons.Outlined.BugReport,
+                accentColor = Warning,
+                checked = state.appDebug,
+                onCheckedChange = onAppDebugChanged,
+            )
+        }
 
-        SectionLabel(stringResource(R.string.settings_debug_section_emulation), modifier = Modifier.padding(top = 8.dp))
+        item(key = "emulation_section") {
+            SectionLabel(stringResource(R.string.settings_debug_section_emulation), modifier = Modifier.padding(top = 8.dp))
+        }
 
-        SettingsToggleCard(
-            title = stringResource(R.string.settings_debug_wine_logs_title),
-            subtitle = stringResource(R.string.settings_debug_wine_logs_subtitle),
-            icon = Icons.Outlined.Terminal,
-            checked = state.wineDebug,
-            onCheckedChange = onWineDebugChanged,
-        )
+        item(key = "wine_logs_card") {
+            SettingsToggleCard(
+                title = stringResource(R.string.settings_debug_wine_logs_title),
+                subtitle = stringResource(R.string.settings_debug_wine_logs_subtitle),
+                icon = Icons.Outlined.Terminal,
+                checked = state.wineDebug,
+                onCheckedChange = onWineDebugChanged,
+            )
+        }
 
-        WineChannelsCard(
-            channels = state.wineChannels,
-            enabled = state.wineDebug,
-            onEdit = { showChannelsDialog = true },
-            onReset = onResetWineChannels,
-            onRemoveChannel = onRemoveWineChannel,
-        )
+        item(key = "wine_channels_card") {
+            WineChannelsCard(
+                channels = state.wineChannels,
+                enabled = state.wineDebug,
+                onEdit = { showChannelsDialog = true },
+                onReset = onResetWineChannels,
+                onRemoveChannel = onRemoveWineChannel,
+            )
+        }
 
-        SettingsToggleCard(
-            title = stringResource(R.string.settings_debug_box_logs_title),
-            subtitle = stringResource(R.string.settings_debug_box_logs_subtitle),
-            icon = Icons.Outlined.Memory,
-            checked = state.box64Logs,
-            onCheckedChange = onBox64LogsChanged,
-        )
+        item(key = "box64_logs_card") {
+            SettingsToggleCard(
+                title = stringResource(R.string.settings_debug_box_logs_title),
+                subtitle = stringResource(R.string.settings_debug_box_logs_subtitle),
+                icon = Icons.Outlined.Memory,
+                checked = state.box64Logs,
+                onCheckedChange = onBox64LogsChanged,
+            )
+        }
 
-        SettingsToggleCard(
-            title = stringResource(R.string.settings_debug_fex_logs_title),
-            subtitle = stringResource(R.string.settings_debug_fex_logs_subtitle),
-            icon = Icons.Outlined.Memory,
-            checked = state.fexcoreLogs,
-            onCheckedChange = onFexcoreLogsChanged,
-        )
+        item(key = "fexcore_logs_card") {
+            SettingsToggleCard(
+                title = stringResource(R.string.settings_debug_fex_logs_title),
+                subtitle = stringResource(R.string.settings_debug_fex_logs_subtitle),
+                icon = Icons.Outlined.Memory,
+                checked = state.fexcoreLogs,
+                onCheckedChange = onFexcoreLogsChanged,
+            )
+        }
 
-        SectionLabel(stringResource(R.string.settings_debug_section_subsystems), modifier = Modifier.padding(top = 8.dp))
+        item(key = "subsystems_section") {
+            SectionLabel(stringResource(R.string.settings_debug_section_subsystems), modifier = Modifier.padding(top = 8.dp))
+        }
 
-        SettingsToggleCard(
-            title = stringResource(R.string.settings_debug_steam_logs_title),
-            subtitle = stringResource(R.string.settings_debug_steam_logs_subtitle),
-            icon = Icons.Outlined.SportsEsports,
-            checked = state.steamLogs,
-            onCheckedChange = onSteamLogsChanged,
-        )
+        item(key = "steam_logs_card") {
+            SettingsToggleCard(
+                title = stringResource(R.string.settings_debug_steam_logs_title),
+                subtitle = stringResource(R.string.settings_debug_steam_logs_subtitle),
+                icon = Icons.Outlined.SportsEsports,
+                checked = state.steamLogs,
+                onCheckedChange = onSteamLogsChanged,
+            )
+        }
 
-        SettingsToggleCard(
-            title = stringResource(R.string.settings_debug_input_logs),
-            subtitle = stringResource(R.string.settings_debug_input_logs_description),
-            icon = Icons.Outlined.Gamepad,
-            checked = state.inputLogs,
-            onCheckedChange = onInputLogsChanged,
-        )
+        item(key = "input_logs_card") {
+            SettingsToggleCard(
+                title = stringResource(R.string.settings_debug_input_logs),
+                subtitle = stringResource(R.string.settings_debug_input_logs_description),
+                icon = Icons.Outlined.Gamepad,
+                checked = state.inputLogs,
+                onCheckedChange = onInputLogsChanged,
+            )
+        }
 
-        SettingsToggleCard(
-            title = stringResource(R.string.settings_debug_download_logs),
-            subtitle = stringResource(R.string.settings_debug_download_logs_description),
-            icon = Icons.Outlined.CloudDownload,
-            checked = state.downloadLogs,
-            onCheckedChange = onDownloadLogsChanged,
-        )
+        item(key = "download_logs_card") {
+            SettingsToggleCard(
+                title = stringResource(R.string.settings_debug_download_logs),
+                subtitle = stringResource(R.string.settings_debug_download_logs_description),
+                icon = Icons.Outlined.CloudDownload,
+                checked = state.downloadLogs,
+                onCheckedChange = onDownloadLogsChanged,
+            )
+        }
 
-        SectionLabel(stringResource(R.string.settings_debug_section_tools), modifier = Modifier.padding(top = 8.dp))
+        item(key = "tools_section") {
+            SectionLabel(stringResource(R.string.settings_debug_section_tools), modifier = Modifier.padding(top = 8.dp))
+        }
 
-        ShareLogsButton(onClick = onShareLogs)
+        item(key = "share_logs_button") {
+            ShareLogsButton(onClick = onShareLogs)
+        }
 
-        Spacer(Modifier.height(24.dp))
+        item(key = "bottom_spacer") {
+            Spacer(Modifier.height(24.dp))
+        }
     }
 }
 

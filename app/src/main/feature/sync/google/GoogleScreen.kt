@@ -15,19 +15,29 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.CloudSync
@@ -53,6 +63,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -78,6 +89,11 @@ fun GoogleScreen() {
     val context = LocalContext.current
     val activity = context as? Activity
     val scope = rememberCoroutineScope()
+    val layoutDirection = LocalLayoutDirection.current
+    val navBarPadding = WindowInsets.navigationBars.asPaddingValues()
+    val navBarStartPadding = navBarPadding.calculateStartPadding(layoutDirection)
+    val navBarEndPadding = navBarPadding.calculateEndPadding(layoutDirection)
+    val navBarBottomPadding = navBarPadding.calculateBottomPadding()
 
     var googleSignedIn by remember { mutableStateOf(false) }
     var syncState by remember { mutableStateOf(CloudSyncManager.StoreLoginSyncState()) }
@@ -107,109 +123,126 @@ fun GoogleScreen() {
         busy = false
     }
 
-    Column(
+    LazyColumn(
         modifier =
             Modifier
-                .fillMaxWidth()
-                .background(BgDark)
-                .padding(horizontal = 16.dp, vertical = 16.dp),
+                .fillMaxSize()
+                .background(BgDark),
+        contentPadding =
+            PaddingValues(
+                start = 16.dp + navBarStartPadding,
+                top = 16.dp,
+                end = 16.dp + navBarEndPadding,
+                bottom = 4.dp + navBarBottomPadding,
+            ),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        SectionLabel(stringResource(R.string.google_cloud_services))
+        item("services_section") {
+            SectionLabel(stringResource(R.string.google_cloud_services))
+        }
 
-        GoogleAccountCard(
-            isLoggedIn = googleSignedIn,
-            busy = busy,
-            onSignIn = {
-                val currentActivity = activity ?: return@GoogleAccountCard
-                busy = true
-                CloudSyncManager.signIn(currentActivity) { success, message ->
-                    busy = false
-                    googleSignedIn = success
-                    AppUtils.showToast(context, message)
-                    refreshState()
-                }
-            },
-            onSignOut = {
-                val currentActivity = activity ?: return@GoogleAccountCard
-                busy = true
-                CloudSyncManager.signOut(currentActivity) { success, message ->
-                    busy = false
-                    googleSignedIn = !success
-                    AppUtils.showToast(context, message)
-                    refreshState()
-                }
-            },
-        )
-
-        SectionLabel(stringResource(R.string.google_cloud_store_logins), modifier = Modifier.padding(top = 8.dp))
-
-        StoreLoginCard(
-            state = syncState,
-            busy = busy,
-            onBackup = {
-                val currentActivity = activity ?: return@StoreLoginCard
-                busy = true
-                scope.launch {
-                    try {
-                        val message = CloudSyncManager.backupStoreLogins(currentActivity)
-                        AppUtils.showToast(context, message)
-                        syncState = CloudSyncManager.readStoreLoginState(currentActivity)
-                        googleSignedIn = syncState.googleSignedIn
-                    } finally {
+        item("google_account_card") {
+            GoogleAccountCard(
+                isLoggedIn = googleSignedIn,
+                busy = busy,
+                onSignIn = {
+                    val currentActivity = activity ?: return@GoogleAccountCard
+                    busy = true
+                    CloudSyncManager.signIn(currentActivity) { success, message ->
                         busy = false
-                    }
-                }
-            },
-            onRestore = {
-                val currentActivity = activity ?: return@StoreLoginCard
-                busy = true
-                scope.launch {
-                    try {
-                        val message = CloudSyncManager.restoreStoreLogins(currentActivity)
+                        googleSignedIn = success
                         AppUtils.showToast(context, message)
-                        syncState = CloudSyncManager.readStoreLoginState(currentActivity)
-                        googleSignedIn = syncState.googleSignedIn
-                    } finally {
-                        busy = false
+                        refreshState()
                     }
-                }
-            },
-        )
+                },
+                onSignOut = {
+                    val currentActivity = activity ?: return@GoogleAccountCard
+                    busy = true
+                    CloudSyncManager.signOut(currentActivity) { success, message ->
+                        busy = false
+                        googleSignedIn = !success
+                        AppUtils.showToast(context, message)
+                        refreshState()
+                    }
+                },
+            )
+        }
 
-        SectionLabel(stringResource(R.string.google_cloud_auto_backup), modifier = Modifier.padding(top = 8.dp))
+        item("store_logins_section") {
+            SectionLabel(stringResource(R.string.google_cloud_store_logins), modifier = Modifier.padding(top = 8.dp))
+        }
 
-        AutoBackupCard(
-            enabled = autoBackupEnabled,
-            googleSignedIn = googleSignedIn,
-            busy = busy,
-            onToggle = { newValue ->
-                if (newValue) {
-                    val currentActivity = activity ?: return@AutoBackupCard
+        item("store_login_card") {
+            StoreLoginCard(
+                state = syncState,
+                busy = busy,
+                onBackup = {
+                    val currentActivity = activity ?: return@StoreLoginCard
                     busy = true
                     scope.launch {
                         try {
-                            val alreadyAuthorized = GameSaveBackupManager.requestDriveAuthorization(currentActivity)
-                            if (alreadyAuthorized) {
-                                autoBackupEnabled = true
-                                autoBackupPrefs.edit().putBoolean("cloud_sync_auto_backup", true).apply()
-                            } else {
-                                // Consent UI launched — toggle will be enabled after user grants access
-                                autoBackupEnabled = true
-                                autoBackupPrefs.edit().putBoolean("cloud_sync_auto_backup", true).apply()
-                            }
-                        } catch (e: Exception) {
-                            AppUtils.showToast(context, "Drive authorization failed: ${e.message}")
+                            val message = CloudSyncManager.backupStoreLogins(currentActivity)
+                            AppUtils.showToast(context, message)
+                            syncState = CloudSyncManager.readStoreLoginState(currentActivity)
+                            googleSignedIn = syncState.googleSignedIn
                         } finally {
                             busy = false
                         }
                     }
-                } else {
-                    autoBackupEnabled = false
-                    autoBackupPrefs.edit().putBoolean("cloud_sync_auto_backup", false).apply()
-                }
-            },
-        )
+                },
+                onRestore = {
+                    val currentActivity = activity ?: return@StoreLoginCard
+                    busy = true
+                    scope.launch {
+                        try {
+                            val message = CloudSyncManager.restoreStoreLogins(currentActivity)
+                            AppUtils.showToast(context, message)
+                            syncState = CloudSyncManager.readStoreLoginState(currentActivity)
+                            googleSignedIn = syncState.googleSignedIn
+                        } finally {
+                            busy = false
+                        }
+                    }
+                },
+            )
+        }
+
+        item("auto_backup_section") {
+            SectionLabel(stringResource(R.string.google_cloud_auto_backup), modifier = Modifier.padding(top = 8.dp))
+        }
+
+        item("auto_backup_card") {
+            AutoBackupCard(
+                enabled = autoBackupEnabled,
+                googleSignedIn = googleSignedIn,
+                busy = busy,
+                onToggle = { newValue ->
+                    if (newValue) {
+                        val currentActivity = activity ?: return@AutoBackupCard
+                        busy = true
+                        scope.launch {
+                            try {
+                                val alreadyAuthorized = GameSaveBackupManager.requestDriveAuthorization(currentActivity)
+                                if (alreadyAuthorized) {
+                                    autoBackupEnabled = true
+                                    autoBackupPrefs.edit().putBoolean("cloud_sync_auto_backup", true).apply()
+                                } else {
+                                    autoBackupEnabled = false
+                                    autoBackupPrefs.edit().putBoolean("cloud_sync_auto_backup", false).apply()
+                                }
+                            } catch (e: Exception) {
+                                AppUtils.showToast(context, "Drive authorization failed: ${e.message}")
+                            } finally {
+                                busy = false
+                            }
+                        }
+                    } else {
+                        autoBackupEnabled = false
+                        autoBackupPrefs.edit().putBoolean("cloud_sync_auto_backup", false).apply()
+                    }
+                },
+            )
+        }
     }
 }
 
@@ -330,81 +363,165 @@ private fun GoogleAccountCard(
         label = "alpha_google",
     )
 
-    Box(
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(14.dp))
-                .background(CardDark)
-                .border(1.dp, CardBorder, RoundedCornerShape(14.dp)),
-    ) {
-        Row(
+    BoxWithConstraints {
+        val compact = maxWidth < 400.dp
+
+        Box(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 14.dp, vertical = 11.dp),
-            verticalAlignment = Alignment.CenterVertically,
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(CardDark)
+                    .border(1.dp, CardBorder, RoundedCornerShape(14.dp)),
         ) {
-            IconBox(icon = Icons.Outlined.Gamepad, tint = Color(0xFF34A853))
+            if (compact) {
+                Column(
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 11.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        IconBox(icon = Icons.Outlined.Gamepad, tint = Color(0xFF34A853))
+                        Spacer(Modifier.width(14.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = stringResource(R.string.google_cloud_play_games),
+                                color = TextPrimary,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    if (isLoggedIn) {
+                                        Box(
+                                            modifier =
+                                                Modifier
+                                                    .size(10.dp)
+                                                    .scale(pulseScale)
+                                                    .clip(CircleShape)
+                                                    .background(StatusGreen.copy(alpha = pulseAlpha)),
+                                        )
+                                    }
+                                    Box(
+                                        modifier =
+                                            Modifier
+                                                .size(6.dp)
+                                                .clip(CircleShape)
+                                                .background(if (isLoggedIn) StatusGreen else TextSecondary.copy(alpha = 0.4f)),
+                                    )
+                                }
+                                Spacer(Modifier.width(6.dp))
+                                Text(
+                                    text =
+                                        when {
+                                            busy -> stringResource(R.string.google_cloud_status_syncing)
+                                            isLoggedIn -> stringResource(R.string.google_cloud_status_connected)
+                                            else -> stringResource(R.string.google_cloud_status_not_signed_in)
+                                        },
+                                    color = if (isLoggedIn) StatusGreen else TextSecondary,
+                                    fontSize = 12.sp,
+                                )
+                            }
+                        }
+                    }
 
-            Spacer(Modifier.width(14.dp))
-
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = stringResource(R.string.google_cloud_play_games),
-                    color = TextPrimary,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Spacer(Modifier.height(4.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(contentAlignment = Alignment.Center) {
-                        if (isLoggedIn) {
-                            Box(
-                                modifier =
-                                    Modifier
-                                        .size(10.dp)
-                                        .scale(pulseScale)
-                                        .clip(CircleShape)
-                                        .background(StatusGreen.copy(alpha = pulseAlpha)),
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                    ) {
+                        if (!isLoggedIn) {
+                            ActionButton(
+                                label = if (busy) stringResource(R.string.google_cloud_working) else stringResource(R.string.google_cloud_sign_in),
+                                textColor = Color(0xFF34A853),
+                                enabled = !busy,
+                                onClick = onSignIn,
+                            )
+                        } else {
+                            ActionButton(
+                                label = if (busy) stringResource(R.string.google_cloud_working) else stringResource(R.string.google_cloud_disable_sync),
+                                textColor = DangerRed,
+                                enabled = !busy,
+                                onClick = onSignOut,
                             )
                         }
-                        Box(
-                            modifier =
-                                Modifier
-                                    .size(6.dp)
-                                    .clip(CircleShape)
-                                    .background(if (isLoggedIn) StatusGreen else TextSecondary.copy(alpha = 0.4f)),
+                    }
+                }
+            } else {
+                Row(
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 11.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    IconBox(icon = Icons.Outlined.Gamepad, tint = Color(0xFF34A853))
+
+                    Spacer(Modifier.width(14.dp))
+
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = stringResource(R.string.google_cloud_play_games),
+                            color = TextPrimary,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(contentAlignment = Alignment.Center) {
+                                if (isLoggedIn) {
+                                    Box(
+                                        modifier =
+                                            Modifier
+                                                .size(10.dp)
+                                                .scale(pulseScale)
+                                                .clip(CircleShape)
+                                                .background(StatusGreen.copy(alpha = pulseAlpha)),
+                                    )
+                                }
+                                Box(
+                                    modifier =
+                                        Modifier
+                                            .size(6.dp)
+                                            .clip(CircleShape)
+                                            .background(if (isLoggedIn) StatusGreen else TextSecondary.copy(alpha = 0.4f)),
+                                )
+                            }
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                text =
+                                    when {
+                                        busy -> stringResource(R.string.google_cloud_status_syncing)
+                                        isLoggedIn -> stringResource(R.string.google_cloud_status_connected)
+                                        else -> stringResource(R.string.google_cloud_status_not_signed_in)
+                                    },
+                                color = if (isLoggedIn) StatusGreen else TextSecondary,
+                                fontSize = 12.sp,
+                            )
+                        }
+                    }
+
+                    if (!isLoggedIn) {
+                        ActionButton(
+                            label = if (busy) stringResource(R.string.google_cloud_working) else stringResource(R.string.google_cloud_sign_in),
+                            textColor = Color(0xFF34A853),
+                            enabled = !busy,
+                            onClick = onSignIn,
+                        )
+                    } else {
+                        ActionButton(
+                            label = if (busy) stringResource(R.string.google_cloud_working) else stringResource(R.string.google_cloud_disable_sync),
+                            textColor = DangerRed,
+                            enabled = !busy,
+                            onClick = onSignOut,
                         )
                     }
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        text =
-                            when {
-                                busy -> stringResource(R.string.google_cloud_status_syncing)
-                                isLoggedIn -> stringResource(R.string.google_cloud_status_connected)
-                                else -> stringResource(R.string.google_cloud_status_not_signed_in)
-                            },
-                        color = if (isLoggedIn) StatusGreen else TextSecondary,
-                        fontSize = 12.sp,
-                    )
                 }
-            }
-
-            if (!isLoggedIn) {
-                ActionButton(
-                    label = if (busy) stringResource(R.string.google_cloud_working) else stringResource(R.string.google_cloud_sign_in),
-                    textColor = Color(0xFF34A853),
-                    enabled = !busy,
-                    onClick = onSignIn,
-                )
-            } else {
-                ActionButton(
-                    label = if (busy) stringResource(R.string.google_cloud_working) else stringResource(R.string.google_cloud_disable_sync),
-                    textColor = DangerRed,
-                    enabled = !busy,
-                    onClick = onSignOut,
-                )
             }
         }
     }
@@ -438,7 +555,7 @@ private fun StoreLoginCard(
             DateUtils.getRelativeTimeSpanString(it, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS).toString()
         }
 
-    Box(
+    BoxWithConstraints(
         modifier =
             Modifier
                 .fillMaxWidth()
@@ -447,6 +564,8 @@ private fun StoreLoginCard(
                 .border(1.dp, CardBorder, RoundedCornerShape(14.dp))
                 .padding(14.dp),
     ) {
+        val compact = maxWidth < 400.dp
+
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 StatusIconBox(statusColor = statusColor)
@@ -471,62 +590,123 @@ private fun StoreLoginCard(
                 StoreBadgeRow(stores = stores)
             }
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text =
-                            when {
-                                state.status == CloudSyncManager.SyncStatus.ERROR -> {
-                                    stringResource(
-                                        R.string.google_cloud_saved_games_unavailable,
-                                    )
-                                }
-
-                                state.cloudStores.isNotEmpty() -> {
-                                    stringResource(R.string.google_cloud_snapshot_ready)
-                                }
-
-                                state.localStores.isNotEmpty() -> {
-                                    stringResource(R.string.google_cloud_waiting_first_backup)
-                                }
-
-                                else -> {
-                                    stringResource(R.string.google_cloud_no_store_logins_detected)
-                                }
-                            },
-                        color = statusColor,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium,
-                    )
-                    if (lastSyncLabel != null) {
-                        Spacer(Modifier.height(2.dp))
+            if (compact) {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
                         Text(
-                            text = stringResource(R.string.google_cloud_last_synced, lastSyncLabel),
-                            color = TextSecondary,
-                            fontSize = 11.sp,
+                            text =
+                                when {
+                                    state.status == CloudSyncManager.SyncStatus.ERROR -> {
+                                        stringResource(R.string.google_cloud_saved_games_unavailable)
+                                    }
+
+                                    state.cloudStores.isNotEmpty() -> {
+                                        stringResource(R.string.google_cloud_snapshot_ready)
+                                    }
+
+                                    state.localStores.isNotEmpty() -> {
+                                        stringResource(R.string.google_cloud_waiting_first_backup)
+                                    }
+
+                                    else -> {
+                                        stringResource(R.string.google_cloud_no_store_logins_detected)
+                                    }
+                                },
+                            color = statusColor,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                        )
+                        if (lastSyncLabel != null) {
+                            Spacer(Modifier.height(2.dp))
+                            Text(
+                                text = stringResource(R.string.google_cloud_last_synced, lastSyncLabel),
+                                color = TextSecondary,
+                                fontSize = 11.sp,
+                            )
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        ActionButton(
+                            label = if (busy) stringResource(R.string.google_cloud_working) else stringResource(R.string.google_cloud_backup),
+                            textColor = WarningAmber,
+                            icon = Icons.Outlined.Upload,
+                            enabled = !busy && state.googleSignedIn && state.localStores.isNotEmpty(),
+                            onClick = onBackup,
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        ActionButton(
+                            label = if (busy) stringResource(R.string.google_cloud_working) else stringResource(R.string.google_cloud_restore),
+                            textColor = Accent,
+                            icon = Icons.Outlined.Restore,
+                            enabled = !busy && state.googleSignedIn && state.cloudStores.isNotEmpty(),
+                            onClick = onRestore,
                         )
                     }
                 }
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text =
+                                when {
+                                    state.status == CloudSyncManager.SyncStatus.ERROR -> {
+                                        stringResource(R.string.google_cloud_saved_games_unavailable)
+                                    }
 
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ActionButton(
-                        label = if (busy) stringResource(R.string.google_cloud_working) else stringResource(R.string.google_cloud_backup),
-                        textColor = WarningAmber,
-                        icon = Icons.Outlined.Upload,
-                        enabled = !busy && state.googleSignedIn && state.localStores.isNotEmpty(),
-                        onClick = onBackup,
-                    )
-                    ActionButton(
-                        label = if (busy) stringResource(R.string.google_cloud_working) else stringResource(R.string.google_cloud_restore),
-                        textColor = Accent,
-                        icon = Icons.Outlined.Restore,
-                        enabled = !busy && state.googleSignedIn && state.cloudStores.isNotEmpty(),
-                        onClick = onRestore,
-                    )
+                                    state.cloudStores.isNotEmpty() -> {
+                                        stringResource(R.string.google_cloud_snapshot_ready)
+                                    }
+
+                                    state.localStores.isNotEmpty() -> {
+                                        stringResource(R.string.google_cloud_waiting_first_backup)
+                                    }
+
+                                    else -> {
+                                        stringResource(R.string.google_cloud_no_store_logins_detected)
+                                    }
+                                },
+                            color = statusColor,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                        )
+                        if (lastSyncLabel != null) {
+                            Spacer(Modifier.height(2.dp))
+                            Text(
+                                text = stringResource(R.string.google_cloud_last_synced, lastSyncLabel),
+                                color = TextSecondary,
+                                fontSize = 11.sp,
+                            )
+                        }
+                    }
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        ActionButton(
+                            label = if (busy) stringResource(R.string.google_cloud_working) else stringResource(R.string.google_cloud_backup),
+                            textColor = WarningAmber,
+                            icon = Icons.Outlined.Upload,
+                            enabled = !busy && state.googleSignedIn && state.localStores.isNotEmpty(),
+                            onClick = onBackup,
+                        )
+                        ActionButton(
+                            label = if (busy) stringResource(R.string.google_cloud_working) else stringResource(R.string.google_cloud_restore),
+                            textColor = Accent,
+                            icon = Icons.Outlined.Restore,
+                            enabled = !busy && state.googleSignedIn && state.cloudStores.isNotEmpty(),
+                            onClick = onRestore,
+                        )
+                    }
                 }
             }
         }
@@ -535,7 +715,10 @@ private fun StoreLoginCard(
 
 @Composable
 private fun StoreBadgeRow(stores: List<String>) {
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    Row(
+        modifier = Modifier.horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
         stores.forEach { store ->
             Box(
                 modifier =

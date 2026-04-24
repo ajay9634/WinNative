@@ -1,6 +1,5 @@
 /* Settings > Other screen — Jetpack Compose / Material3.
- * Scrolling delegated to a View-level ScrollView in OtherSettingsFragment,
- * matching StoresFragment and DebugFragment. */
+ * Uses a LazyColumn for the main content so the screen scrolls natively in Compose. */
 package com.winlator.cmod.feature.settings
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
@@ -12,19 +11,26 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -39,6 +45,7 @@ import androidx.compose.material.icons.outlined.Monitor
 import androidx.compose.material.icons.outlined.Mouse
 import androidx.compose.material.icons.outlined.OpenInBrowser
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material.icons.outlined.SportsEsports
 import androidx.compose.material.icons.outlined.SystemUpdate
@@ -65,6 +72,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -126,9 +134,15 @@ fun OtherSettingsScreen(
     onEnableFileProviderChanged: (Boolean) -> Unit,
     onOpenInBrowserChanged: (Boolean) -> Unit,
     onShareClipboardChanged: (Boolean) -> Unit,
+    onRunSetupWizard: () -> Unit,
     onReinstallImagefs: () -> Unit,
 ) {
     var showReinstallDialog by remember { mutableStateOf(false) }
+    val layoutDirection = LocalLayoutDirection.current
+    val navBarPadding = WindowInsets.navigationBars.asPaddingValues()
+    val navBarStartPadding = navBarPadding.calculateStartPadding(layoutDirection)
+    val navBarEndPadding = navBarPadding.calculateEndPadding(layoutDirection)
+    val navBarBottomPadding = navBarPadding.calculateBottomPadding()
 
     if (showReinstallDialog) {
         ReinstallImagefsConfirmDialog(
@@ -144,128 +158,182 @@ fun OtherSettingsScreen(
         ImagefsInstallProgressDialog(percent = percent)
     }
 
-    Column(
+    LazyColumn(
         modifier =
             Modifier
-                .fillMaxWidth()
-                .wrapContentHeight()
-                .background(BgDark)
-                .padding(horizontal = 16.dp, vertical = 16.dp),
+                .fillMaxSize()
+                .background(BgDark),
+        contentPadding =
+            PaddingValues(
+                start = 16.dp + navBarStartPadding,
+                end = 16.dp + navBarEndPadding,
+                top = 16.dp,
+                bottom = 4.dp + navBarBottomPadding,
+            ),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        SectionLabel(stringResource(R.string.common_ui_application))
+        item(key = "application_section") {
+            SectionLabel(stringResource(R.string.common_ui_application))
+        }
 
-        UpdatesCard(
-            checked = state.checkForUpdates,
-            onCheckedChange = onCheckForUpdatesChanged,
-            onCheckNow = onCheckForUpdatesNow,
-        )
+        item(key = "updates_card") {
+            UpdatesCard(
+                checked = state.checkForUpdates,
+                onCheckedChange = onCheckForUpdatesChanged,
+                onCheckNow = onCheckForUpdatesNow,
+            )
+        }
 
-        SettingsDropdownCard(
-            title = stringResource(R.string.settings_other_language_title),
-            subtitle = stringResource(R.string.settings_other_language_summary),
-            icon = Icons.Outlined.Language,
-            options = state.languageLabels,
-            selectedIndex = state.languageIndex,
-            onOptionSelected = onLanguageSelected,
-        )
+        item(key = "language_card") {
+            SettingsDropdownCard(
+                title = stringResource(R.string.settings_other_language_title),
+                subtitle = stringResource(R.string.settings_other_language_summary),
+                icon = Icons.Outlined.Language,
+                options = state.languageLabels,
+                selectedIndex = state.languageIndex,
+                onOptionSelected = onLanguageSelected,
+            )
+        }
 
-        SectionLabel(stringResource(R.string.session_display_title), modifier = Modifier.padding(top = 8.dp))
+        item(key = "display_section") {
+            SectionLabel(stringResource(R.string.session_display_title), modifier = Modifier.padding(top = 8.dp))
+        }
 
-        SettingsDropdownCard(
-            title = stringResource(R.string.settings_general_refresh_rate),
-            subtitle = stringResource(R.string.settings_general_refresh_rate_summary),
-            icon = Icons.Outlined.Monitor,
-            options = state.refreshRateLabels,
-            selectedIndex = state.refreshRateIndex,
-            onOptionSelected = onRefreshRateSelected,
-        )
+        item(key = "refresh_rate_card") {
+            SettingsDropdownCard(
+                title = stringResource(R.string.settings_general_refresh_rate),
+                subtitle = stringResource(R.string.settings_general_refresh_rate_summary),
+                icon = Icons.Outlined.Monitor,
+                options = state.refreshRateLabels,
+                selectedIndex = state.refreshRateIndex,
+                onOptionSelected = onRefreshRateSelected,
+            )
+        }
 
-        SectionLabel(stringResource(R.string.settings_audio_sound), modifier = Modifier.padding(top = 8.dp))
+        item(key = "audio_section") {
+            SectionLabel(stringResource(R.string.settings_audio_sound), modifier = Modifier.padding(top = 8.dp))
+        }
 
-        SoundFontCard(
-            files = state.soundFontFiles,
-            selectedIndex = state.soundFontIndex,
-            onSelected = onSoundFontSelected,
-            onInstall = onInstallSoundFont,
-            onRemove = onRemoveSoundFont,
-        )
+        item(key = "sound_font_card") {
+            SoundFontCard(
+                files = state.soundFontFiles,
+                selectedIndex = state.soundFontIndex,
+                onSelected = onSoundFontSelected,
+                onInstall = onInstallSoundFont,
+                onRemove = onRemoveSoundFont,
+            )
+        }
 
-        SectionLabel(stringResource(R.string.settings_general_paths_title), modifier = Modifier.padding(top = 8.dp))
+        item(key = "paths_section") {
+            SectionLabel(stringResource(R.string.settings_general_paths_title), modifier = Modifier.padding(top = 8.dp))
+        }
 
-        FolderPathCard(
-            label = stringResource(R.string.settings_general_winlator_path_title),
-            path = state.winlatorPath,
-            onBrowse = onPickWinlatorPath,
-        )
-        FolderPathCard(
-            label = stringResource(R.string.settings_general_shortcut_export_path_title),
-            path = state.shortcutExportPath,
-            onBrowse = onPickShortcutExportPath,
-        )
+        item(key = "winlator_path_card") {
+            FolderPathCard(
+                label = stringResource(R.string.settings_general_winlator_path_title),
+                path = state.winlatorPath,
+                onBrowse = onPickWinlatorPath,
+            )
+        }
 
-        SectionLabel(stringResource(R.string.session_xserver_title), modifier = Modifier.padding(top = 8.dp))
+        item(key = "shortcut_export_path_card") {
+            FolderPathCard(
+                label = stringResource(R.string.settings_general_shortcut_export_path_title),
+                path = state.shortcutExportPath,
+                onBrowse = onPickShortcutExportPath,
+            )
+        }
 
-        CursorSpeedCard(
-            percent = state.cursorSpeedPercent,
-            onPercentChanged = onCursorSpeedChanged,
-        )
+        item(key = "xserver_section") {
+            SectionLabel(stringResource(R.string.session_xserver_title), modifier = Modifier.padding(top = 8.dp))
+        }
 
-        SettingsToggleCard(
-            title = stringResource(R.string.session_xserver_use_dri3_extension),
-            subtitle = stringResource(R.string.session_xserver_use_dri3_description),
-            icon = Icons.Outlined.Visibility,
-            checked = state.useDRI3,
-            onCheckedChange = onUseDRI3Changed,
-        )
+        item(key = "cursor_speed_card") {
+            CursorSpeedCard(
+                percent = state.cursorSpeedPercent,
+                onPercentChanged = onCursorSpeedChanged,
+            )
+        }
 
-        SettingsToggleCard(
-            title = stringResource(R.string.settings_general_cursor_lock_title),
-            subtitle = stringResource(R.string.settings_general_cursor_lock_summary),
-            icon = Icons.Outlined.Mouse,
-            checked = state.cursorLock,
-            onCheckedChange = onCursorLockChanged,
-        )
+        item(key = "use_dri3_card") {
+            SettingsToggleCard(
+                title = stringResource(R.string.session_xserver_use_dri3_extension),
+                subtitle = stringResource(R.string.session_xserver_use_dri3_description),
+                icon = Icons.Outlined.Visibility,
+                checked = state.useDRI3,
+                onCheckedChange = onUseDRI3Changed,
+            )
+        }
 
-        SettingsToggleCard(
-            title = stringResource(R.string.settings_general_xinput_toggle_title),
-            subtitle = stringResource(R.string.settings_general_xinput_toggle_summary),
-            icon = Icons.Outlined.SportsEsports,
-            checked = state.xinputDisabled,
-            onCheckedChange = onXinputDisabledChanged,
-        )
+        item(key = "cursor_lock_card") {
+            SettingsToggleCard(
+                title = stringResource(R.string.settings_general_cursor_lock_title),
+                subtitle = stringResource(R.string.settings_general_cursor_lock_summary),
+                icon = Icons.Outlined.Mouse,
+                checked = state.cursorLock,
+                onCheckedChange = onCursorLockChanged,
+            )
+        }
 
-        SectionLabel(stringResource(R.string.settings_other_section_integration), modifier = Modifier.padding(top = 8.dp))
+        item(key = "xinput_card") {
+            SettingsToggleCard(
+                title = stringResource(R.string.settings_general_xinput_toggle_title),
+                subtitle = stringResource(R.string.settings_general_xinput_toggle_summary),
+                icon = Icons.Outlined.SportsEsports,
+                checked = state.xinputDisabled,
+                onCheckedChange = onXinputDisabledChanged,
+            )
+        }
 
-        SettingsToggleCard(
-            title = stringResource(R.string.settings_general_enable_file_provider),
-            subtitle = stringResource(R.string.settings_general_file_provider_summary),
-            icon = Icons.Outlined.Folder,
-            checked = state.enableFileProvider,
-            onCheckedChange = onEnableFileProviderChanged,
-        )
+        item(key = "integration_section") {
+            SectionLabel(stringResource(R.string.settings_other_section_integration), modifier = Modifier.padding(top = 8.dp))
+        }
 
-        SettingsToggleCard(
-            title = stringResource(R.string.settings_general_open_with_android_browser),
-            subtitle = stringResource(R.string.settings_general_open_browser_summary),
-            icon = Icons.Outlined.OpenInBrowser,
-            checked = state.openInBrowser,
-            onCheckedChange = onOpenInBrowserChanged,
-        )
+        item(key = "file_provider_card") {
+            SettingsToggleCard(
+                title = stringResource(R.string.settings_general_enable_file_provider),
+                subtitle = stringResource(R.string.settings_general_file_provider_summary),
+                icon = Icons.Outlined.Folder,
+                checked = state.enableFileProvider,
+                onCheckedChange = onEnableFileProviderChanged,
+            )
+        }
 
-        SettingsToggleCard(
-            title = stringResource(R.string.settings_general_share_android_clipboard),
-            subtitle = stringResource(R.string.settings_general_clipboard_summary),
-            icon = Icons.Outlined.ContentCopy,
-            checked = state.shareClipboard,
-            onCheckedChange = onShareClipboardChanged,
-        )
+        item(key = "browser_card") {
+            SettingsToggleCard(
+                title = stringResource(R.string.settings_general_open_with_android_browser),
+                subtitle = stringResource(R.string.settings_general_open_browser_summary),
+                icon = Icons.Outlined.OpenInBrowser,
+                checked = state.openInBrowser,
+                onCheckedChange = onOpenInBrowserChanged,
+            )
+        }
 
-        SectionLabel(stringResource(R.string.settings_general_imagefs), modifier = Modifier.padding(top = 8.dp))
+        item(key = "clipboard_card") {
+            SettingsToggleCard(
+                title = stringResource(R.string.settings_general_share_android_clipboard),
+                subtitle = stringResource(R.string.settings_general_clipboard_summary),
+                icon = Icons.Outlined.ContentCopy,
+                checked = state.shareClipboard,
+                onCheckedChange = onShareClipboardChanged,
+            )
+        }
 
-        ReinstallImagefsCard(onClick = { showReinstallDialog = true })
+        item(key = "imagefs_section") {
+            SectionLabel(stringResource(R.string.settings_general_imagefs), modifier = Modifier.padding(top = 8.dp))
+        }
 
-        Spacer(Modifier.height(24.dp))
+        item(key = "reinstall_imagefs_card") {
+            ReinstallImagefsCard(onClick = { showReinstallDialog = true })
+        }
+
+        item(key = "setup_wizard_card") {
+            SetupWizardCard(onClick = onRunSetupWizard)
+        }
+
+        item(key = "bottom_spacer") {
+            Spacer(Modifier.height(24.dp))
+        }
     }
 }
 
@@ -1001,6 +1069,34 @@ private fun ImagefsInstallProgressDialog(percent: Int) {
 // Reinstall imagefs card with centered action button
 @Composable
 private fun ReinstallImagefsCard(onClick: () -> Unit) {
+    SettingsActionCard(
+        title = stringResource(R.string.settings_general_reinstall_imagefs),
+        subtitle = stringResource(R.string.settings_general_imagefs_summary),
+        icon = Icons.Outlined.Autorenew,
+        buttonLabel = stringResource(R.string.common_ui_reinstall),
+        onClick = onClick,
+    )
+}
+
+@Composable
+private fun SetupWizardCard(onClick: () -> Unit) {
+    SettingsActionCard(
+        title = stringResource(R.string.settings_other_setup_wizard_title),
+        subtitle = stringResource(R.string.settings_other_setup_wizard_summary),
+        icon = Icons.Outlined.Settings,
+        buttonLabel = stringResource(R.string.common_ui_open),
+        onClick = onClick,
+    )
+}
+
+@Composable
+private fun SettingsActionCard(
+    title: String,
+    subtitle: String,
+    icon: ImageVector,
+    buttonLabel: String,
+    onClick: () -> Unit,
+) {
     Box(
         modifier =
             Modifier
@@ -1009,90 +1105,47 @@ private fun ReinstallImagefsCard(onClick: () -> Unit) {
                 .background(CardDark)
                 .border(1.dp, CardBorder, RoundedCornerShape(12.dp)),
     ) {
-        Column(
+        Row(
             modifier =
                 Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier =
-                        Modifier
-                            .size(34.dp)
-                            .clip(RoundedCornerShape(9.dp))
-                            .background(IconBoxBg),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.Autorenew,
-                        contentDescription = null,
-                        tint = Accent,
-                        modifier = Modifier.size(17.dp),
-                    )
-                }
-                Spacer(Modifier.width(13.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = stringResource(R.string.settings_general_reinstall_imagefs),
-                        color = TextPrimary,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Medium,
-                    )
-                    Text(
-                        text = stringResource(R.string.settings_general_imagefs_summary),
-                        color = TextSecondary,
-                        fontSize = 11.sp,
-                    )
-                }
+            Box(
+                modifier =
+                    Modifier
+                        .size(34.dp)
+                        .clip(RoundedCornerShape(9.dp))
+                        .background(IconBoxBg),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = Accent,
+                    modifier = Modifier.size(17.dp),
+                )
             }
-            Spacer(Modifier.height(10.dp))
-            ReinstallButton(onClick = onClick)
-        }
-    }
-}
-
-@Composable
-private fun ReinstallButton(onClick: () -> Unit) {
-    var isPressed by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.97f else 1f,
-        animationSpec = spring(stiffness = Spring.StiffnessHigh),
-        label = "reinstallScale",
-    )
-    Box(
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .scale(scale)
-                .clip(RoundedCornerShape(10.dp))
-                .background(Accent.copy(alpha = 0.12f))
-                .border(1.dp, Accent.copy(alpha = 0.35f), RoundedCornerShape(10.dp))
-                .pointerInput(onClick) {
-                    detectTapGestures(
-                        onPress = {
-                            isPressed = true
-                            tryAwaitRelease()
-                            isPressed = false
-                        },
-                        onTap = { onClick() },
-                    )
-                }.padding(vertical = 12.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                imageVector = Icons.Outlined.Refresh,
-                contentDescription = null,
-                tint = Accent,
-                modifier = Modifier.size(16.dp),
-            )
-            Spacer(Modifier.width(8.dp))
-            Text(
-                text = stringResource(R.string.settings_general_reinstall_imagefs),
-                color = Accent,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold,
+            Spacer(Modifier.width(13.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    color = TextPrimary,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                )
+                Text(
+                    text = subtitle,
+                    color = TextSecondary,
+                    fontSize = 11.sp,
+                )
+            }
+            Spacer(Modifier.width(10.dp))
+            SmallActionButton(
+                label = buttonLabel,
+                textColor = Accent,
+                onClick = onClick,
             )
         }
     }
@@ -1115,6 +1168,7 @@ private fun SmallActionButton(
         modifier =
             Modifier
                 .scale(scale)
+                .width(104.dp)
                 .clip(RoundedCornerShape(8.dp))
                 .background(Color(0xFF222232))
                 .border(1.dp, textColor.copy(alpha = 0.30f), RoundedCornerShape(8.dp))

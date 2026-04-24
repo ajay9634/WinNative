@@ -109,9 +109,12 @@ import com.winlator.cmod.runtime.display.environment.ImageFsInstaller
 import com.winlator.cmod.runtime.wine.DefaultVersion
 import com.winlator.cmod.runtime.wine.WineInfo
 import com.winlator.cmod.shared.android.AppUtils
+import com.winlator.cmod.shared.android.FixedFontScaleFragmentActivity
 import com.winlator.cmod.shared.io.FileUtils
 import com.winlator.cmod.shared.io.TarCompressorUtils
 import com.winlator.cmod.shared.io.TarCompressorUtils.Type
+import com.winlator.cmod.shared.ui.widget.chasingBorder
+import com.winlator.cmod.shared.theme.WinNativeTheme
 import com.winlator.cmod.shared.util.OnExtractFileListener
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -139,9 +142,11 @@ private data class TabInfo(
     val highlight: Boolean = false,
 )
 
-class SetupWizardActivity : FragmentActivity() {
+class SetupWizardActivity : FixedFontScaleFragmentActivity() {
     companion object {
         private const val PREFS_NAME = "winnative_setup"
+        private const val EXTRA_FORCE_SHOW = "force_show"
+        private const val EXTRA_RETURN_TO_CALLER = "return_to_caller"
         private const val KEY_SETUP_COMPLETE = "setup_complete"
         private const val KEY_RECOMMENDED_COMPONENTS_DONE = "recommended_components_done"
         private const val KEY_DRIVERS_VISITED = "drivers_visited"
@@ -162,6 +167,12 @@ class SetupWizardActivity : FragmentActivity() {
         fun markSetupComplete(context: Context) {
             prefs(context).edit().putBoolean(KEY_SETUP_COMPLETE, true).apply()
         }
+
+        @JvmStatic
+        fun createManualRerunIntent(context: Context): Intent =
+            Intent(context, SetupWizardActivity::class.java)
+                .putExtra(EXTRA_FORCE_SHOW, true)
+                .putExtra(EXTRA_RETURN_TO_CALLER, true)
 
         @JvmStatic
         fun getPreferredGameContainer(
@@ -483,6 +494,7 @@ class SetupWizardActivity : FragmentActivity() {
     private val advancedInstalledSet = mutableStateListOf<String>()
     private val advancedContainerNames = mutableStateListOf<String>()
 
+    private var returnToCaller = false
     private var pendingContainerSettingsType: String? = null
     private var recommendedPackageRefreshInFlight = false
 
@@ -529,6 +541,8 @@ class SetupWizardActivity : FragmentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        returnToCaller = intent?.getBooleanExtra(EXTRA_RETURN_TO_CALLER, false) == true
+        val forceShow = intent?.getBooleanExtra(EXTRA_FORCE_SHOW, false) == true
 
         supportFragmentManager.setFragmentResultListener(
             SetupWizardDriversDialogFragment.RESULT_KEY,
@@ -538,7 +552,7 @@ class SetupWizardActivity : FragmentActivity() {
             refreshWizardState()
         }
 
-        if (isSetupComplete(this) && ImageFs.find(this).isValid) {
+        if (!forceShow && isSetupComplete(this) && ImageFs.find(this).isValid) {
             launchApp()
             return
         }
@@ -549,7 +563,7 @@ class SetupWizardActivity : FragmentActivity() {
         loadAdvancedProfiles()
 
         setContent {
-            MaterialTheme(
+            WinNativeTheme(
                 colorScheme =
                     darkColorScheme(
                         primary = Color(0xFF57CBDE),
@@ -1420,7 +1434,11 @@ class SetupWizardActivity : FragmentActivity() {
 
     private fun finishWizard() {
         markSetupComplete(this)
-        launchApp()
+        if (returnToCaller) {
+            finish()
+        } else {
+            launchApp()
+        }
     }
 
     private fun clearRootDir(rootDir: File) {
@@ -2221,6 +2239,10 @@ class SetupWizardActivity : FragmentActivity() {
                                 val allRecommendedInstalled =
                                     isRecommendedTab &&
                                         tabProfiles.all { it.verName in advancedInstalledSet }
+                                val highlightInstallAll =
+                                    isRecommendedTab &&
+                                        transferState.value == null &&
+                                        !allRecommendedInstalled
 
                                 LazyColumn(
                                     modifier = Modifier.fillMaxSize(),
@@ -2228,46 +2250,52 @@ class SetupWizardActivity : FragmentActivity() {
                                 ) {
                                     if (isRecommendedTab) {
                                         item {
+                                            val installAllEnabled = transferState.value == null && !allRecommendedInstalled
+                                            val installAllShape = RoundedCornerShape(8.dp)
                                             Box(
                                                 modifier = Modifier.fillMaxWidth(),
                                                 contentAlignment = Alignment.CenterEnd,
                                             ) {
-                                                OutlinedButton(
-                                                    onClick = { installAllRecommended() },
-                                                    enabled = transferState.value == null && !allRecommendedInstalled,
-                                                    shape = RoundedCornerShape(8.dp),
-                                                    border =
-                                                        BorderStroke(
-                                                            1.dp,
-                                                            if (allRecommendedInstalled) {
-                                                                Color(0xFF23436F)
-                                                            } else if (transferState.value != null) {
-                                                                Color(0xFF222D3D)
-                                                            } else {
-                                                                Color(0xFF306679)
-                                                            },
-                                                        ),
-                                                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp),
-                                                    modifier = Modifier.height(30.dp),
-                                                    colors =
-                                                        ButtonDefaults.outlinedButtonColors(
-                                                            contentColor =
-                                                                if (allRecommendedInstalled) {
-                                                                    Color(
-                                                                        0xFF3B82F6,
+                                                Box(
+                                                    modifier =
+                                                        Modifier
+                                                            .background(
+                                                                color =
+                                                                    if (highlightInstallAll) {
+                                                                        Color(0xFF131D2F)
+                                                                    } else {
+                                                                        Color.Transparent
+                                                                    },
+                                                                shape = installAllShape,
+                                                            ).then(
+                                                                if (highlightInstallAll) {
+                                                                    Modifier.chasingBorder(
+                                                                        isFocused = true,
+                                                                        cornerRadius = 8.dp,
+                                                                        borderWidth = 1.5.dp,
+                                                                        animationDurationMs = 8200,
                                                                     )
                                                                 } else {
-                                                                    Color(0xFF8BB8C5)
-                                                                },
-                                                            disabledContentColor =
-                                                                if (allRecommendedInstalled) {
-                                                                    Color(
-                                                                        0xFF3B82F6,
+                                                                    Modifier.border(
+                                                                        width = 1.dp,
+                                                                        color =
+                                                                            if (allRecommendedInstalled) {
+                                                                                Color(0xFF23436F)
+                                                                            } else if (!installAllEnabled) {
+                                                                                Color(0xFF222D3D)
+                                                                            } else {
+                                                                                Color(0xFF306679)
+                                                                            },
+                                                                        shape = installAllShape,
                                                                     )
-                                                                } else {
-                                                                    Color(0xFF4A5260)
                                                                 },
-                                                        ),
+                                                            ).clickable(
+                                                                enabled = installAllEnabled,
+                                                                interactionSource = remember { MutableInteractionSource() },
+                                                                indication = null,
+                                                            ) { installAllRecommended() }
+                                                            .padding(horizontal = 14.dp, vertical = 8.dp),
+                                                    contentAlignment = Alignment.Center,
                                                 ) {
                                                     Text(
                                                         text =
@@ -2281,6 +2309,16 @@ class SetupWizardActivity : FragmentActivity() {
                                                         fontFamily = InterFont,
                                                         fontWeight = FontWeight.SemiBold,
                                                         fontSize = 11.sp,
+                                                        color =
+                                                            if (highlightInstallAll) {
+                                                                Color(0xFFF0F4FF)
+                                                            } else if (allRecommendedInstalled) {
+                                                                Color(0xFF3B82F6)
+                                                            } else if (!installAllEnabled) {
+                                                                Color(0xFF4A5260)
+                                                            } else {
+                                                                Color(0xFF8BB8C5)
+                                                            },
                                                     )
                                                 }
                                             }

@@ -49,6 +49,8 @@ import com.winlator.cmod.feature.stores.steam.enums.OS
 import com.winlator.cmod.feature.stores.steam.enums.OSArch
 import com.winlator.cmod.feature.stores.steam.enums.SaveLocation
 import com.winlator.cmod.feature.stores.steam.enums.SyncResult
+import com.auth0.android.jwt.JWT
+import com.winlator.cmod.feature.stores.common.StoreAuthStatus
 import com.winlator.cmod.feature.stores.steam.events.AndroidEvent
 import com.winlator.cmod.feature.stores.steam.events.SteamEvent
 import com.winlator.cmod.feature.stores.steam.statsgen.StatType
@@ -66,6 +68,7 @@ import com.winlator.cmod.runtime.container.Container
 import com.winlator.cmod.runtime.container.ContainerManager
 import com.winlator.cmod.runtime.display.environment.ImageFs
 import com.winlator.cmod.runtime.system.GPUInformation
+import com.winlator.cmod.shared.android.AppTerminationHelper
 import com.winlator.cmod.shared.android.AppUtils
 import com.winlator.cmod.shared.android.NotificationHelper
 import com.winlator.cmod.shared.io.StorageUtils
@@ -317,6 +320,8 @@ class SteamService :
         private const val DOWNLOAD_INFO_FILE = "depot_bytes.json"
         private const val LEGACY_DOWNLOAD_INFO_FILE = "bytes_downloaded.txt"
         private const val COMPONENTS_BASE_URL = "https://github.com/maxjivi05/Components/releases/download/Components"
+        @Volatile
+        private var startupMetadataRepairJob: Job? = null
 
         /**
          * Default timeout to use when making requests
@@ -716,12 +721,14 @@ class SteamService :
         private val _isConnectedFlow = MutableStateFlow(false)
         val isConnectedFlow = _isConnectedFlow.asStateFlow()
 
+        /**
+         * Pure getter over [isConnectedFlow]. Do not read `steamClient.isConnected` here —
+         * concurrent readers were mutating the flow as a side-effect, producing UI flicker
+         * during CM reconnect gaps. Callbacks (`onConnected` / `onDisconnected` / `clearValues`)
+         * are the only authoritative writers of the flow.
+         */
         var isConnected: Boolean
-            get() {
-                val real = (instance?.steamClient?.isConnected == true)
-                if (real != _isConnectedFlow.value) _isConnectedFlow.value = real
-                return real
-            }
+            get() = _isConnectedFlow.value
             private set(value) {
                 _isConnectedFlow.value = value
             }
@@ -734,34 +741,28 @@ class SteamService :
         private val _isLoggedInFlow = MutableStateFlow(false)
         val isLoggedInFlow = _isLoggedInFlow.asStateFlow()
 
+        /**
+         * Pure getter over [isLoggedInFlow]. Previously this read `steamClient.steamID.isValid`
+         * and wrote the flow as a side-effect, which caused UI flicker whenever any caller
+         * (StoresFragment.onResume, CloudSyncManager.rehydrateSteamSession, the 10s poll) read
+         * the value during a transient CM disconnect. The flow is now only mutated by
+         * authoritative sources: initLoginStatus(), onLoggedOn, onLoggedOff, logOut, clearValues.
+         */
         val isLoggedIn: Boolean
-            get() {
-                if (isLoggingOut) return false
-                val real = (instance?.steamClient?.steamID?.isValid == true)
-                // Only update flow if instance exists, to avoid overwriting
-                // the pre-seeded credential-based state before service starts
-                if (instance != null && real != _isLoggedInFlow.value) {
-                    _isLoggedInFlow.value = real
-                }
-                return real
-            }
+            get() = !isLoggingOut && _isLoggedInFlow.value
 
         var isWaitingForQRAuth: Boolean = false
             private set
 
+        /**
+         * Keeps [isConnectedFlow] in sync with the live socket state. Previously also wrote
+         * [isLoggedInFlow] from `steamID.isValid`, which flipped the UI to "signed out"
+         * whenever Valve's CM load-balanced us. The login flow is now purely callback-driven
+         * (see [isLoggedIn] docs), so this method only touches the connected flow.
+         */
         fun syncStates() {
             val connected = instance?.steamClient?.isConnected == true
             if (connected != _isConnectedFlow.value) _isConnectedFlow.value = connected
-
-            // Only update login state if the service instance exists (i.e. it has started).
-            // Before that, the flow may be pre-seeded from stored credentials and we
-            // don't want to overwrite it with false.
-            if (instance != null) {
-                val loggedIn = !isLoggingOut && (instance?.steamClient?.steamID?.isValid == true)
-                if (loggedIn != _isLoggedInFlow.value) {
-                    _isLoggedInFlow.value = loggedIn
-                }
-            }
         }
 
         /**
@@ -771,6 +772,36 @@ class SteamService :
         fun hasStoredCredentials(context: Context): Boolean {
             PrefManager.init(context)
             return PrefManager.refreshToken.isNotBlank()
+        }
+
+        /**
+         * Classifies the current Steam session using the same [StoreAuthStatus] model Epic
+         * uses. Lets the UI distinguish "reconnecting" / "token expired" / "no login" rather
+         * than painting every non-ACTIVE state as "signed out."
+         *
+         * - LOGGED_OUT: no stored refresh token.
+         * - EXPIRED:    refresh-token JWT's `exp` claim is in the past (~200 days old).
+         * - ACTIVE:     [isLoggedInFlow] is true (JavaSteam callback confirmed login).
+         * - REFRESHABLE: have a valid-looking refresh token but not yet logged on — the
+         *                 service is still connecting, or we're mid-reconnect after a CM bounce.
+         * - UNKNOWN:    refresh token exists but can't be parsed as a JWT.
+         */
+        fun getAuthStatus(context: Context): StoreAuthStatus {
+            PrefManager.init(context)
+            val refreshToken = PrefManager.refreshToken
+            if (refreshToken.isBlank()) return StoreAuthStatus.LOGGED_OUT
+
+            val jwtExpired: Boolean? =
+                try {
+                    JWT(refreshToken).isExpired(0)
+                } catch (_: Exception) {
+                    null
+                }
+            if (jwtExpired == true) return StoreAuthStatus.EXPIRED
+
+            if (!isLoggingOut && _isLoggedInFlow.value) return StoreAuthStatus.ACTIVE
+
+            return if (jwtExpired == null) StoreAuthStatus.UNKNOWN else StoreAuthStatus.REFRESHABLE
         }
 
         /**
@@ -995,6 +1026,71 @@ class SteamService :
                     }
                 }
                 repairedCount
+            }
+        }
+
+        private fun countCompletedInstallMarkers(maxCount: Int = Int.MAX_VALUE): Int {
+            var count = 0
+            for (basePath in allInstallPaths) {
+                val baseDir = File(basePath)
+                val appDirs = baseDir.listFiles() ?: continue
+                for (appDir in appDirs) {
+                    if (!appDir.isDirectory) continue
+                    val hasCompleteMarker = File(appDir, Marker.DOWNLOAD_COMPLETE_MARKER.fileName).exists()
+                    if (!hasCompleteMarker) continue
+
+                    val hasInProgressMarker = File(appDir, Marker.DOWNLOAD_IN_PROGRESS_MARKER.fileName).exists()
+                    if (hasInProgressMarker) continue
+
+                    count++
+                    if (count >= maxCount) return count
+                }
+            }
+            return count
+        }
+
+        private fun shouldRepairInstalledMetadata(): Boolean {
+            val db =
+                runCatching { PluviaDatabase.getInstance() }.getOrElse {
+                    Timber.e(it, "Failed to access database for startup metadata repair gate")
+                    return false
+                }
+
+            val knownAppCount =
+                runBlocking(Dispatchers.IO) {
+                    runCatching { db.steamAppDao().getAllAppIds().size }.getOrElse {
+                        Timber.e(it, "Failed to load Steam app ids for startup metadata repair gate")
+                        return@runBlocking 0
+                    }
+                }
+            if (knownAppCount == 0) return false
+
+            val installedDbCount =
+                runBlocking(Dispatchers.IO) {
+                    runCatching { db.appInfoDao().getAllInstalledAppIds().size }.getOrElse {
+                        Timber.e(it, "Failed to load installed Steam app ids for startup metadata repair gate")
+                        return@runBlocking 0
+                    }
+                }
+
+            val diskInstallCount = countCompletedInstallMarkers(maxCount = installedDbCount + 1)
+            return diskInstallCount > installedDbCount
+        }
+
+        fun maybeRepairInstalledMetadataOnStartup(context: Context) {
+            val appContext = context.applicationContext
+            if (!hasStoredCredentials(appContext)) return
+
+            if (startupMetadataRepairJob?.isActive == true) return
+
+            startupMetadataRepairJob =
+                CoroutineScope(Dispatchers.IO).launch {
+                    if (!shouldRepairInstalledMetadata()) return@launch
+                delay(1500L)
+                val repairedCount = repairInstalledMetadataFromDisk()
+                if (repairedCount > 0) {
+                    Timber.i("Startup metadata repair recovered $repairedCount Steam install record(s)")
+                }
             }
         }
 
@@ -4675,6 +4771,16 @@ class SteamService :
 
         fun stop() {
             instance?.let { steamInstance ->
+                if (!isStopping) {
+                    isStopping = true
+                    runCatching {
+                        steamInstance.stopForeground(Service.STOP_FOREGROUND_REMOVE)
+                    }.onFailure { Timber.w(it, "Failed to remove SteamService foreground state during shutdown") }
+                    runCatching {
+                        steamInstance.notificationHelper.cancel()
+                    }.onFailure { Timber.w(it, "Failed to cancel SteamService notification during shutdown") }
+                    steamInstance.stopSelf()
+                }
                 steamInstance.scope.launch {
                     steamInstance.stop()
                 }
@@ -4936,9 +5042,7 @@ class SteamService :
         when (intent?.action) {
             NotificationHelper.ACTION_EXIT -> {
                 Timber.d("Exiting app via notification intent")
-
-                val event = AndroidEvent.EndProcess
-                PluviaApp.events.emit(event)
+                AppTerminationHelper.stopManagedServices(applicationContext, "notification_exit")
 
                 return START_NOT_STICKY
             }
@@ -5029,6 +5133,9 @@ class SteamService :
 
     override fun onDestroy() {
         super.onDestroy()
+        if (instance === this) {
+            instance = null
+        }
 
         // Persist download progress for all active downloads
         // This is a safety net for OS kills (unlikely but possible)
@@ -5039,7 +5146,15 @@ class SteamService :
         stopForeground(STOP_FOREGROUND_REMOVE)
         notificationHelper.cancel()
 
-        scope.launch { stop() }
+        if (!isStopping) {
+            scope.launch { stop() }
+        }
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        super.onTaskRemoved(rootIntent)
+        Timber.i("Task removed; stopping managed app services")
+        AppTerminationHelper.stopManagedServices(applicationContext, "steam_task_removed")
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -5100,6 +5215,10 @@ class SteamService :
     }
 
     private fun clearValues() {
+        if (instance === this) {
+            instance = null
+        }
+
         _loginResult = LoginResult.Failed
         isRunning = false
         isConnected = false

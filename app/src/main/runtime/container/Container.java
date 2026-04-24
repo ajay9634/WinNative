@@ -20,14 +20,14 @@ import java.io.File;
 import java.util.Iterator;
 
 public class Container {
-    public static final String DEFAULT_ENV_VARS = "WRAPPER_MAX_IMAGE_COUNT=0 VKD3D_SHADER_MODEL=6_6 ZINK_DESCRIPTORS=lazy ZINK_DEBUG=compact MESA_SHADER_CACHE_DISABLE=false MESA_SHADER_CACHE_MAX_SIZE=512MB mesa_glthread=true WINEESYNC=1 TU_DEBUG=noconform,sysmem";
+    public static final String DEFAULT_ENV_VARS = "WRAPPER_MAX_IMAGE_COUNT=0 VKD3D_SHADER_MODEL=6_6 ZINK_DESCRIPTORS=lazy ZINK_DEBUG=compact MESA_SHADER_CACHE_DISABLE=false MESA_SHADER_CACHE_MAX_SIZE=512MB mesa_glthread=true TU_DEBUG=noconform,sysmem";
     public static final String DEFAULT_SCREEN_SIZE = "1280x720";
     public static final String DEFAULT_GRAPHICS_DRIVER = "wrapper";
     public static final String DEFAULT_AUDIO_DRIVER = "alsa";
     public static final String DEFAULT_EMULATOR = "FEXCore";
     public static final String DEFAULT_EMULATOR64 = "FEXCore";
     public static final String DEFAULT_DXWRAPPER = "dxvk+vkd3d";
-    public static final String DEFAULT_DXWRAPPERCONFIG = "version=" + DefaultVersion.DXVK + ",framerate=0,async=1,asyncCache=1" + ",vkd3dVersion=" + DefaultVersion.VKD3D + ",vkd3dLevel=12_1" + ",ddrawrapper=" + Container.DEFAULT_DDRAWRAPPER + ",csmt=3" + ",gpuName=NVIDIA GeForce GTX 480" + ",videoMemorySize=2048" + ",strict_shader_math=1" + ",OffscreenRenderingMode=fbo" + ",renderer=gl";
+    public static final String DEFAULT_DXWRAPPERCONFIG = "version=" + DefaultVersion.DXVK + ",framerate=0,async=0,asyncCache=0" + ",vkd3dVersion=" + DefaultVersion.VKD3D + ",vkd3dLevel=12_1" + ",ddrawrapper=" + Container.DEFAULT_DDRAWRAPPER + ",csmt=3" + ",gpuName=NVIDIA GeForce GTX 480" + ",videoMemorySize=2048" + ",strict_shader_math=1" + ",OffscreenRenderingMode=fbo" + ",renderer=gl";
     public static final String DEFAULT_GRAPHICSDRIVERCONFIG =
             "vulkanVersion=1.3" + ";version=" + ";blacklistedExtensions=" + ";maxDeviceMemory=0" + ";presentMode=mailbox" + ";syncFrame=0" + ";disablePresentWait=1" + ";resourceType=auto" + ";bcnEmulation=none" + ";bcnEmulationType=compute" + ";bcnEmulationCache=0" + ";gpuName=Device";
     public static final String DEFAULT_DDRAWRAPPER = "none";
@@ -73,10 +73,11 @@ public class Container {
     private boolean useColdClient = true;
     private String steamType = DefaultVersion.STEAM_TYPE;
     private boolean allowSteamUpdates;
-    private boolean needsUnpacking = false;
+    private boolean needsUnpacking = true;
     private boolean forceDlc = false;
     private boolean steamOfflineMode = false;
-    private boolean unpackFiles = false;
+    private boolean unpackFiles = true;
+    private boolean runtimePatcher = false;
 
     public static final String STEAM_TYPE_NORMAL = "normal";
     public static final String STEAM_TYPE_LIGHT = "light";
@@ -105,7 +106,7 @@ public class Container {
     public void setExecutablePath(String executablePath) {
         String newPath = executablePath != null ? executablePath : "";
         // If the executable path changed from a non-empty value, mark as needing unpacking
-        // so Steamless DRM stripping will re-run on the new exe (matches GameNative)
+        // so Steamless DRM stripping will re-run on the new exe
         if (!this.executablePath.isEmpty() && !this.executablePath.equals(newPath)) {
             this.needsUnpacking = true;
         }
@@ -449,6 +450,7 @@ public class Container {
             data.put("forceDlc", forceDlc);
             data.put("steamOfflineMode", steamOfflineMode);
             data.put("unpackFiles", unpackFiles);
+            data.put("runtimePatcher", runtimePatcher);
 
             if (!WineInfo.isMainWineVersion(wineVersion)) data.put("wineVersion", wineVersion);
             FileUtils.writeString(getConfigFile(), data.toString());
@@ -586,6 +588,9 @@ public class Container {
                     break;
                 case "unpackFiles":
                     setUnpackFiles(data.getBoolean(key));
+                    break;
+                case "runtimePatcher":
+                    setRuntimePatcher(data.getBoolean(key));
                     break;
                 case "moveSteamExe":
                     break;
@@ -751,6 +756,14 @@ public class Container {
 
     public void setUnpackFiles(boolean unpackFiles) {
         this.unpackFiles = unpackFiles;
+    }
+
+    public boolean isRuntimePatcher() {
+        return runtimePatcher;
+    }
+
+    public void setRuntimePatcher(boolean runtimePatcher) {
+        this.runtimePatcher = runtimePatcher;
     }
 
 }

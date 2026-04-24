@@ -25,6 +25,7 @@ import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.core.text.HtmlCompat
 import androidx.fragment.app.Fragment
+import androidx.lifecycle.lifecycleScope
 import androidx.preference.PreferenceManager
 import com.winlator.cmod.R
 import com.winlator.cmod.runtime.input.ControllerHelper
@@ -41,9 +42,13 @@ import com.winlator.cmod.shared.io.FileUtils
 import com.winlator.cmod.shared.io.HttpUtils
 import com.winlator.cmod.shared.math.Mathf
 import com.winlator.cmod.shared.ui.dialog.ContentDialog
+import com.winlator.cmod.shared.theme.WinNativeTheme
 import org.json.JSONObject
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 class InputControlsFragment : Fragment() {
     private lateinit var manager: InputControlsManager
@@ -136,7 +141,7 @@ class InputControlsFragment : Fragment() {
         ComposeView(requireContext()).apply {
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
             setContent {
-                MaterialTheme(
+                WinNativeTheme(
                     colorScheme =
                         darkColorScheme(
                             primary = Color(0xFF1A9FFF),
@@ -161,7 +166,12 @@ class InputControlsFragment : Fragment() {
                                 onMultiChoiceDialogConfirm = ::confirmMultiChoiceDialog,
                                 onOverlayOpacityChanged = ::setOverlayOpacity,
                                 onGyroscopeEnabledChanged = { enabled ->
-                                    preferences.edit().putBoolean("gyro_enabled", enabled).apply()
+                                    val editor = preferences.edit()
+                                    editor.putBoolean("gyro_enabled", enabled)
+                                    if (!enabled) {
+                                        editor.putBoolean("mouse_gyro_enabled", false)
+                                    }
+                                    editor.apply()
                                     publishUiState()
                                 },
                                 onGyroscopeModeSelected = { mode ->
@@ -171,6 +181,14 @@ class InputControlsFragment : Fragment() {
                                 onGyroscopeActivatorClick = ::showActivatorPicker,
                                 onRightStickGyroChanged = { enabled ->
                                     preferences.edit().putBoolean("process_gyro_with_left_trigger", enabled).apply()
+                                    publishUiState()
+                                },
+                                onGyroMouseEnabledChanged = { enabled ->
+                                    preferences.edit().putBoolean("mouse_gyro_enabled", enabled).apply()
+                                    publishUiState()
+                                },
+                                onGyroMouseScaleChanged = { value ->
+                                    preferences.edit().putFloat("gyro_mouse_scale", value.toFloat()).apply()
                                     publishUiState()
                                 },
                                 onGyroscopeExpandedChanged = { expanded ->
@@ -311,10 +329,12 @@ class InputControlsFragment : Fragment() {
                 selectedProfileName = profile?.name,
                 selectedProfileElementCount = profile?.elementCountFromFile ?: 0,
                 overlayOpacity = (preferences.getFloat("overlay_opacity", InputControlsView.DEFAULT_OVERLAY_OPACITY) * 100).toInt(),
-                gyroscopeEnabled = preferences.getBoolean("gyro_enabled", false),
+                gyroscopeEnabled = preferences.getBoolean("gyro_enabled", false) || preferences.getBoolean("mouse_gyro_enabled", false),
                 gyroscopeModeIndex = preferences.getInt("gyro_mode", 0),
                 gyroscopeActivatorLabel = currentGyroActivatorLabel(),
                 rightStickGyroEnabled = preferences.getBoolean("process_gyro_with_left_trigger", false),
+                gyroMouseEnabled = preferences.getBoolean("mouse_gyro_enabled", false),
+                gyroMouseScale = preferences.getFloat("gyro_mouse_scale", 50.0f).toInt(),
                 gyroscopeExpanded = gyroscopeExpanded,
                 gyroXSensitivity = (preferences.getFloat("gyro_x_sensitivity", 1.0f) * 100).toInt(),
                 gyroYSensitivity = (preferences.getFloat("gyro_y_sensitivity", 1.0f) * 100).toInt(),
@@ -378,8 +398,22 @@ class InputControlsFragment : Fragment() {
 
         val profile = currentProfile
         if (profile != null) {
-            visibleControllers.addAll(profile.loadControllers())
-            for (controller in ExternalController.getControllers()) {
+            val profileControllers = profile.loadControllers()
+            val liveControllers = ExternalController.getControllers()
+            
+            for (pController in profileControllers) {
+                val liveMatch = liveControllers.find { it.id == pController.id }
+                if (liveMatch != null) {
+                    for (i in 0 until pController.controllerBindingCount) {
+                        liveMatch.addControllerBinding(pController.getControllerBindingAt(i))
+                    }
+                    visibleControllers.add(liveMatch)
+                } else {
+                    visibleControllers.add(pController)
+                }
+            }
+            
+            for (controller in liveControllers) {
                 if (visibleControllers.none { it.id == controller.id }) {
                     visibleControllers.add(controller)
                 }
@@ -833,9 +867,13 @@ class InputControlsFragment : Fragment() {
             expandedControllerIds.remove(controllerId)
             if (activeBindingController?.id == controllerId) stopControllerInputCapture()
             profile.removeController(controller)
-            profile.save()
-            refreshVisibleControllers()
-            publishUiState()
+            lifecycleScope.launch(Dispatchers.IO) {
+                profile.save()
+                launch(Dispatchers.Main) {
+                    refreshVisibleControllers()
+                    publishUiState()
+                }
+            }
         }
     }
 
@@ -867,8 +905,12 @@ class InputControlsFragment : Fragment() {
                 }
             controller.addControllerBinding(binding)
             profile.putController(controller)
-            profile.save()
-            publishUiState()
+            lifecycleScope.launch(Dispatchers.IO) {
+                profile.save()
+                launch(Dispatchers.Main) {
+                    publishUiState()
+                }
+            }
         }
     }
 
@@ -891,8 +933,12 @@ class InputControlsFragment : Fragment() {
                     else -> Binding.NONE
                 }
             currentProfile?.putController(controller)
-            currentProfile?.save()
-            publishUiState()
+            lifecycleScope.launch(Dispatchers.IO) {
+                currentProfile?.save()
+                launch(Dispatchers.Main) {
+                    publishUiState()
+                }
+            }
         }
     }
 
@@ -923,8 +969,12 @@ class InputControlsFragment : Fragment() {
         ) { which ->
             binding.binding = values[which]
             currentProfile?.putController(controller)
-            currentProfile?.save()
-            publishUiState()
+            lifecycleScope.launch(Dispatchers.IO) {
+                currentProfile?.save()
+                launch(Dispatchers.Main) {
+                    publishUiState()
+                }
+            }
         }
     }
 
@@ -935,8 +985,12 @@ class InputControlsFragment : Fragment() {
         val (controller, binding) = findBinding(controllerId, keyCode) ?: return
         controller.removeControllerBinding(binding)
         currentProfile?.putController(controller)
-        currentProfile?.save()
-        publishUiState()
+        lifecycleScope.launch(Dispatchers.IO) {
+            currentProfile?.save()
+            launch(Dispatchers.Main) {
+                publishUiState()
+            }
+        }
     }
 
     private fun findVisibleController(controllerId: String): ExternalController? = visibleControllers.firstOrNull { it.id == controllerId }
