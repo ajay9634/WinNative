@@ -39,6 +39,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
@@ -72,7 +73,10 @@ public class WinHandler {
   private final DatagramPacket receivePacket = new DatagramPacket(this.receiveData.array(), 64);
   private final ArrayDeque<Runnable> actions = new ArrayDeque<>();
   private boolean initReceived = false;
-  private boolean running = false;
+  private volatile boolean running = false;
+  private ExecutorService sendExecutor;
+  private ExecutorService receiveExecutor;
+  private ExecutorService vibrationExecutor;
   private final Map<Integer, ExternalController> controllers = new HashMap();
   private byte inputType = 4;
   private final List<Integer> gamepadClients = new CopyOnWriteArrayList();
@@ -294,6 +298,11 @@ public class WinHandler {
   }
 
   public void listProcesses() {
+    if (!this.running) {
+      OnGetProcessInfoListener listener = this.onGetProcessInfoListener;
+      if (listener != null) listener.onGetProcessInfo(0, 0, null);
+      return;
+    }
     addAction(
         () -> {
           try {
@@ -405,8 +414,9 @@ public class WinHandler {
 
   private void addAction(Runnable action) {
     synchronized (this.actions) {
+      if (!this.running) return;
       this.actions.add(action);
-      this.actions.notify();
+      this.actions.notifyAll();
     }
   }
 
@@ -421,33 +431,48 @@ public class WinHandler {
   }
 
   private void startSendThread() {
-    Executors.newSingleThreadExecutor()
-        .execute(
-            () -> {
-              while (this.running) {
-                synchronized (this.actions) {
-                  while (this.initReceived && !this.actions.isEmpty()) {
-                    this.actions.poll().run();
-                  }
-                  try {
-                    this.actions.wait();
-                  } catch (InterruptedException e) {
-                  }
-                }
+    this.sendExecutor = Executors.newSingleThreadExecutor();
+    this.sendExecutor.execute(
+        () -> {
+          while (true) {
+            synchronized (this.actions) {
+              while (this.running && this.initReceived && !this.actions.isEmpty()) {
+                this.actions.poll().run();
               }
-            });
+              if (!this.running) return;
+              try {
+                this.actions.wait();
+              } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+              }
+            }
+          }
+        });
   }
 
   public void stop() {
-    this.running = false;
+    synchronized (this.actions) {
+      this.running = false;
+      this.actions.clear();
+      this.actions.notifyAll();
+    }
+    this.vibrationRunning = false;
     closeFakeInputWriter();
     if (this.socket != null) {
       this.socket.close();
       this.socket = null;
     }
-    synchronized (this.actions) {
-      this.actions.notify();
+    if (this.vibrationServer != null) {
+      try {
+        this.vibrationServer.close();
+      } catch (IOException ignored) {
+      }
+      this.vibrationServer = null;
     }
+    if (this.sendExecutor != null) this.sendExecutor.shutdownNow();
+    if (this.receiveExecutor != null) this.receiveExecutor.shutdownNow();
+    if (this.vibrationExecutor != null) this.vibrationExecutor.shutdownNow();
   }
 
   private void handleRequest(byte requestCode, int port) {
@@ -460,7 +485,7 @@ public class WinHandler {
           this.xinputDisabled = this.preferences.getBoolean("xinput_toggle", false);
         }
         synchronized (this.actions) {
-          this.actions.notify();
+          this.actions.notifyAll();
         }
         return;
       case 5:
@@ -506,24 +531,25 @@ public class WinHandler {
     }
     this.running = true;
     startSendThread();
-    Executors.newSingleThreadExecutor()
-        .execute(
-            () -> {
-              try {
-                this.socket = new DatagramSocket((SocketAddress) null);
-                this.socket.setReuseAddress(true);
-                this.socket.bind(new InetSocketAddress((InetAddress) null, SERVER_PORT));
-                while (this.running) {
-                  this.socket.receive(this.receivePacket);
-                  synchronized (this.actions) {
-                    this.receiveData.rewind();
-                    byte requestCode = this.receiveData.get();
-                    handleRequest(requestCode, this.receivePacket.getPort());
-                  }
-                }
-              } catch (IOException e) {
+    this.receiveExecutor = Executors.newSingleThreadExecutor();
+    this.receiveExecutor.execute(
+        () -> {
+          try {
+            this.socket = new DatagramSocket((SocketAddress) null);
+            this.socket.setReuseAddress(true);
+            this.socket.bind(new InetSocketAddress((InetAddress) null, SERVER_PORT));
+            while (this.running) {
+              this.socket.receive(this.receivePacket);
+              synchronized (this.actions) {
+                if (!this.running) return;
+                this.receiveData.rewind();
+                byte requestCode = this.receiveData.get();
+                handleRequest(requestCode, this.receivePacket.getPort());
               }
-            });
+            }
+          } catch (IOException e) {
+          }
+        });
   }
 
   public void sendGamepadState() {
@@ -845,39 +871,39 @@ public class WinHandler {
     }
     this.vibrationRunning = true;
 
-    Executors.newSingleThreadExecutor()
-        .execute(
-            () -> {
-              try {
-                this.vibrationServer = new LocalServerSocket("winlator_vibration");
-                Log.d(
-                    "WinHandler",
-                    "Vibration listener started on abstract socket: winlator_vibration");
+    this.vibrationExecutor = Executors.newSingleThreadExecutor();
+    this.vibrationExecutor.execute(
+        () -> {
+          try {
+            this.vibrationServer = new LocalServerSocket("winlator_vibration");
+            Log.d(
+                "WinHandler",
+                "Vibration listener started on abstract socket: winlator_vibration");
 
-                while (this.vibrationRunning) {
-                  LocalSocket client = this.vibrationServer.accept();
-                  try {
-                    java.io.InputStream is = client.getInputStream();
-                    byte[] buffer = new byte[8];
-                    int read = is.read(buffer);
-                    if (read == 8) {
-                      int strong = (buffer[0] & 255) | ((buffer[1] & 255) << 8);
-                      int weak = (buffer[2] & 255) | ((buffer[3] & 255) << 8);
-                      int durationMs = (buffer[4] & 255) | ((buffer[5] & 255) << 8);
-                      int slot = (buffer[6] & 255) | ((buffer[7] & 255) << 8);
-                      triggerVibration(strong, weak, durationMs, slot);
-                    }
-                    client.close();
-                  } catch (IOException e) {
-                    Log.e("WinHandler", "Vibration client error: " + e.getMessage());
-                  }
+            while (this.vibrationRunning) {
+              LocalSocket client = this.vibrationServer.accept();
+              try {
+                java.io.InputStream is = client.getInputStream();
+                byte[] buffer = new byte[8];
+                int read = is.read(buffer);
+                if (read == 8) {
+                  int strong = (buffer[0] & 255) | ((buffer[1] & 255) << 8);
+                  int weak = (buffer[2] & 255) | ((buffer[3] & 255) << 8);
+                  int durationMs = (buffer[4] & 255) | ((buffer[5] & 255) << 8);
+                  int slot = (buffer[6] & 255) | ((buffer[7] & 255) << 8);
+                  triggerVibration(strong, weak, durationMs, slot);
                 }
+                client.close();
               } catch (IOException e) {
-                if (this.vibrationRunning) {
-                  Log.e("WinHandler", "Vibration listener error: " + e.getMessage());
-                }
+                if (this.vibrationRunning) Log.e("WinHandler", "Vibration client error: " + e.getMessage());
               }
-            });
+            }
+          } catch (IOException e) {
+            if (this.vibrationRunning) {
+              Log.e("WinHandler", "Vibration listener error: " + e.getMessage());
+            }
+          }
+        });
   }
 
   private void triggerVibration(int strong, int weak, int durationMs, int slot) {
@@ -1039,6 +1065,7 @@ public class WinHandler {
   }
 
   public boolean onGenericMotionEvent(MotionEvent event) {
+    if (!this.running) return false;
     boolean handled = false;
     int deviceId = event.getDeviceId();
     ExternalController controller = getController(deviceId);
@@ -1050,6 +1077,7 @@ public class WinHandler {
   }
 
   public boolean onKeyEvent(KeyEvent event) {
+    if (!this.running) return false;
     boolean handled = false;
     int deviceId = event.getDeviceId();
     ExternalController controller = getController(deviceId);
@@ -1084,11 +1112,6 @@ public class WinHandler {
 
   public void updateGyroData(float rawGyroX, float rawGyroY) {
     GyroSettings gyroSettings = getGyroSettings();
-    if (this.preferences.getBoolean("mouse_gyro_enabled", false)) {
-        updateGyroDataMouse(rawGyroX, rawGyroY, gyroSettings);
-        return;
-    }
-    
     if (!gyroSettings.enabled) {
       this.smoothedGyroX = 0.0f;
       this.smoothedGyroY = 0.0f;
@@ -1096,10 +1119,17 @@ public class WinHandler {
       this.currentGyroStickY = 0.0f;
       this.gyroToggleEnabled = false;
       this.gyroActivatorPressed = false;
+      this.accumulatedGyroX = 0.0f;
+      this.accumulatedGyroY = 0.0f;
       clearLastGyroTarget();
       return;
     }
 
+    if (this.preferences.getBoolean("mouse_gyro_enabled", false)) {
+        updateGyroDataMouse(rawGyroX, rawGyroY, gyroSettings);
+        return;
+    }
+    
     if (Math.abs(rawGyroX) < gyroSettings.deadzone) rawGyroX = 0.0f;
     if (Math.abs(rawGyroY) < gyroSettings.deadzone) rawGyroY = 0.0f;
     if (gyroSettings.invertX) rawGyroX = -rawGyroX;

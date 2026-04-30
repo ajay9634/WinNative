@@ -102,6 +102,12 @@
     <string name="common_ui_application">應用程式</string>
     <string name="common_ui_check">檢查</string>
     <string name="common_ui_select">選擇</string>
+    <string name="common_ui_select_folder">選擇資料夾</string>
+    <string name="common_ui_current_folder">目前資料夾</string>
+    <string name="common_ui_storage_roots">儲存根目錄</string>
+    <string name="common_ui_browse_local_folders_directly">直接瀏覽本機資料夾</string>
+    <string name="common_ui_no_folders_available_here">這裡沒有可用的資料夾</string>
+    <string name="common_ui_grant_all_files_access_browse">請授予所有檔案存取權限，以直接瀏覽本機資料夾。</string>
     <string name="common_ui_not_configured">未設定</string>
     <string name="common_ui_reinstall">重新安裝</string>
     <string name="common_ui_exit_app_confirm">離開 WinNative？</string>
@@ -109,7 +115,23 @@
     <string name="common_ui_disabled_placeholder">-- 已停用 --</string>
     <string name="common_ui_enabled">已啟用</string>
     <string name="common_ui_unknown_error">未知錯誤</string>
+    <string name="common_ui_auto_detected">自動偵測</string>
+    <string name="common_ui_change">變更</string>
     <string name="common_ui_proceed">繼續</string>
+    <string name="common_ui_sign_out">登出</string>
+    <string name="common_ui_name_cannot_be_empty">名稱不能為空</string>
+    <string name="common_ui_error_with_message">錯誤：%1$s</string>
+    <string name="common_ui_64_bit">64 位元</string>
+    <string name="common_ui_32_bit">32 位元</string>
+    <string name="common_ui_64_bit_and_32_bit">64 位元與 32 位元</string>
+    <plurals name="common_ui_folder_count">
+        <item quantity="one">%d 個資料夾</item>
+        <item quantity="other">%d 個資料夾</item>
+    </plurals>
+    <plurals name="common_ui_file_count">
+        <item quantity="one">%d 個檔案</item>
+        <item quantity="other">%d 個檔案</item>
+    </plurals>
 
     <!-- Library > Games -->
     <string name="library_games_shortcut_created">捷徑已建立</string>
@@ -144,6 +166,7 @@
     <string name="library_games_play">遊玩</string>
     <string name="library_games_add_custom_game">新增自訂遊戲</string>
     <string name="library_games_game_name">遊戲名稱</string>
+    <string name="library_games_game_folder_mapped_drive">遊戲資料夾（映射的遊戲磁碟機）</string>
     <string name="library_games_select_exe_provide_name">選擇一個 exe 並提供名稱</string>
     <string name="library_games_sign_in_prompt">登入商店或新增自訂遊戲來建立您的遊戲庫。</string>
 
@@ -152,9 +175,21 @@
     <string name="stores_accounts_steam_integration_title">Steam</string>
     <string name="stores_accounts_shared_downloads_folder">共用下載資料夾</string>
     <string name="stores_accounts_shared_downloads_subtitle">所有商店使用同一個資料夾</string>
+    <string name="stores_accounts_default_downloads_folder">預設下載資料夾</string>
+    <string name="stores_accounts_steam_downloads">Steam 下載</string>
+    <string name="stores_accounts_epic_downloads">Epic 下載</string>
+    <string name="stores_accounts_gog_downloads">GOG 下載</string>
     <string name="stores_accounts_download_speed">下載速度</string>
     <string name="stores_accounts_download_speed_subtitle">控制 Steam 下載執行緒並行數</string>
     <string name="stores_accounts_download_server">下載伺服器</string>
+    <string name="stores_accounts_connected_stores">已連線的商店</string>
+    <string name="stores_accounts_download_settings">下載設定</string>
+    <string name="stores_accounts_download_speed_conservative">保守</string>
+    <string name="stores_accounts_download_speed_balanced">平衡</string>
+    <string name="stores_accounts_download_speed_standard">標準</string>
+    <string name="stores_accounts_download_speed_performance">效能</string>
+    <string name="stores_accounts_download_server_auto_detected">自動偵測：%1$s</string>
+    <string name="stores_accounts_download_server_subtitle">用於遊戲下載的 Steam CDN 區域</string>
     <string name="stores_accounts_sign_out_confirm">登出 %1$s？</string>
     <string name="stores_accounts_sign_out_message">您需要重新登入才能存取您的遊戲庫。</string>
     <string name="stores_accounts_logged_in_epic">已登入 Epic Games！</string>
@@ -186,6 +221,7 @@
     <string name="downloads_queue_phase_cancelled">已取消</string>
     <string name="downloads_queue_phase_failed">失敗：%1$s</string>
     <string name="downloads_queue_cancel_download">取消下載</string>
+    <string name="downloads_queue_empty">沒有進行中的下載。</string>
 
     <!-- Containers > List -->
     <string name="containers_list_new">新建容器</string>
@@ -283,6 +319,7 @@
     <string name="container_config_total">總計</string>
     <string name="container_config_clear_cache">清除快取</string>
     <string name="container_config_estimated_used_space">預估已使用空間</string>
+    <string name="settings_containers_error_saving_wallpaper">儲存桌布時發生錯誤</string>
     <string name="container_config_directinput_mapper_type">DirectInput 對應類型</string>
     <string name="container_config_title">設定</string>
     <string name="container_config_startup_selection">啟動選項</string>
@@ -326,6 +363,8 @@
     <string name="container_wine_mouse_warp_override">滑鼠位移覆蓋</string>
     <string name="container_wine_directx">DirectX</string>
     <string name="container_wine_dxvk_version">DXVK 版本</string>
+    <string name="container_wine_dxvk_config_title">DXVK 設定</string>
+    <string name="container_wine_wined3d_config_title">WineD3D 設定</string>
     <string name="container_wine_vkd3d_version">VKD3D 版本</string>
     <string name="container_wine_version">Wine 版本</string>
     <string name="container_wine_dxwrapper_help_content">
@@ -344,6 +383,8 @@
 
     <!-- Container > Box64 -->
     <string name="container_box64_title">Box64</string>
+    <string name="container_box64_wowbox64_title">Box64 / Wowbox64</string>
+    <string name="container_wowbox64_title">Wowbox64</string>
     <string name="container_box64_preset">Box64 預設</string>
     <string name="container_box64_version">Box64 版本</string>
     <string name="container_box64_stability">穩定性</string>
@@ -371,7 +412,8 @@
         &lt;b&gt;0&lt;/b&gt;：不做任何特殊處理&lt;br /&gt;
         &lt;b&gt;1&lt;/b&gt;：寫入記憶體時啟用部分記憶體屏障（針對某些 MOV 運算碼）&lt;br /&gt;
         &lt;b&gt;2&lt;/b&gt;：包含 1 的所有項目，加上使用 MOV 寫入記憶體時的記憶體屏障&lt;br /&gt;
-        &lt;b&gt;3&lt;/b&gt;：包含 2 的所有項目，加上讀取記憶體時和某些 SSE/SSE2 運算碼的記憶體屏障
+        &lt;b&gt;3&lt;/b&gt;：包含 2 的所有項目，加上讀取記憶體時和某些 SSE/SSE2 運算碼的記憶體屏障&lt;br /&gt;
+        &lt;b&gt;4&lt;/b&gt; : Mimics x86 TSO similarly to QEMU.
     </string>
     <string name="box64_env_var_help__dynarec_forward">定義建構區塊時允許的最大前進值</string>
     <string name="box64_env_var_help__dynarec_callret">CALL/RET 運算碼最佳化</string>
@@ -406,7 +448,7 @@
         &lt;b&gt;3&lt;/b&gt;：使用 SEVL+WFE 模擬 x86 PAUSE 指令。
     </string>
     <string name="box64_env_var_help__avx">
-        AVX 和 AVX2 已實作，連同 BMI1、BMI2、ADX、FMA、F16C 和 RDANDR 擴充！&lt;br /&gt;&lt;br /&gt;
+        AVX 和 AVX2 已實作，連同 BMI1、BMI2、ADX、FMA、F16C 和 RDRAND 擴充！&lt;br /&gt;&lt;br /&gt;
         &lt;b&gt;0&lt;/b&gt;：停用 AVX 擴充&lt;br /&gt;
         &lt;b&gt;1&lt;/b&gt;：啟用 AVX、BMI1、F16C 和 VAES 擴充。&lt;br /&gt;
         &lt;b&gt;2&lt;/b&gt;：包含 1 的所有項目，加上啟用 AVX2、BMI2、FMA、ADX、VPCLMULQDQ 和 RDRAND。&lt;br /&gt;\
@@ -439,6 +481,7 @@
     <string name="container_graphics_configuration">圖形驅動程式設定</string>
     <string name="container_graphics_version">圖形驅動程式版本</string>
     <string name="container_graphics_available_extensions">可用擴充</string>
+    <string name="container_graphics_extensions_enabled_summary">已啟用 %1$d / %2$d</string>
     <string name="container_graphics_max_device_memory">最大裝置記憶體</string>
     <string name="container_graphics_sync_frame">每幀同步</string>
     <string name="container_graphics_disable_present_wait">停用 KHR_present_wait</string>
@@ -457,9 +500,8 @@
     <string name="container_presets_rename">重新命名預設</string>
     <string name="container_presets_import">匯入預設</string>
     <string name="container_presets_custom">自訂</string>
-    <string name="container_presets_built_in">內建</string>
+    <string name="container_presets_built_in">預設</string>
     <string name="container_presets_changes_auto_saved">編輯此自訂預設時，變更會自動儲存。</string>
-    <string name="container_presets_builtin_readonly_hint">內建預設為唯讀。建立或複製預設以自訂這些變數。</string>
     <string name="container_presets_cannot_rename">無法重新命名內建預設</string>
     <string name="container_presets_unable_to_import">無法匯入預設</string>
     <string name="container_presets_no_description">沒有可用的說明</string>
@@ -507,7 +549,6 @@
     <string name="session_drawer_input_controls_subtitle">設定或切換螢幕控制</string>
     <string name="session_drawer_relative_mouse_movement">相對滑鼠移動</string>
     <string name="session_drawer_mouse_input">滑鼠輸入</string>
-    <string name="session_drawer_screen_effects_subtitle">色彩、CRT、FXAA 和著色器選項</string>
     <string name="session_drawer_fullscreen_subtitle">切換全螢幕渲染</string>
     <string name="session_drawer_picture_in_picture">子母畫面</string>
     <string name="session_drawer_pip_subtitle">將遊戲縮小為浮動視窗</string>
@@ -539,23 +580,8 @@
     <string name="session_task_bring_to_front">移至最前</string>
     <string name="session_task_cpu_usage_format">CPU (%1$d%%)</string>
 
-    <!-- Session > Screen Effects -->
-    <string name="session_effects_brightness">亮度</string>
-    <string name="session_effects_contrast">對比度</string>
-    <string name="session_effects_gamma">Gamma</string>
-    <string name="session_effects_color_adjustment">色彩調整</string>
-    <string name="session_effects_enable_fxaa">啟用 FXAA</string>
-    <string name="session_effects_enable_crt_shader">啟用 CRT 著色器</string>
-    <string name="session_effects_confirm_add_profile">您要新增新的設定檔嗎？</string>
-    <string name="session_effects_default_profile">預設設定檔</string>
-    <string name="session_effects_title">螢幕效果</string>
-    <string name="session_effects_enable_toon_shader">啟用卡通著色器</string>
-    <string name="session_effects_enable_ntsc_effect">啟用 NTSC 效果</string>
-    <string name="session_effects_post_processing">後製處理</string>
-    <string name="session_effects_profile_selection">設定檔選擇</string>
 
     <!-- Session > Display -->
-    <string name="session_display_show_fps">顯示 FPS</string>
     <string name="session_display_orientation">方向</string>
     <string name="session_display_horizontal">水平</string>
     <string name="session_display_vertical">垂直</string>
@@ -667,6 +693,9 @@
     <string name="settings_general_cursor_speed">游標速度</string>
     <string name="settings_general_theme">佈景主題</string>
     <string name="settings_general_background">背景</string>
+    <string name="settings_general_background_color_hex">顏色（十六進位）</string>
+    <string name="settings_general_wallpaper_selected">已選取桌布</string>
+    <string name="settings_general_select_wallpaper">選取桌布</string>
     <string name="settings_general_title">一般</string>
     <string name="settings_general_enable_file_provider">啟用檔案提供者</string>
     <string name="settings_general_take_effect_next_startup">此選項將在下次啟動時生效。</string>
@@ -752,7 +781,7 @@
 
     <!-- Settings > Content Packages -->
     <string name="settings_content_install">安裝內容</string>
-    <string name="settings_content_type">內容類型</string>
+    <string name="settings_content_type">類別</string>
     <string name="settings_content_components">元件</string>
     <string name="settings_content_auto_create_container">自動建立容器</string>
     <string name="settings_content_remove_title">移除元件？</string>
@@ -760,13 +789,13 @@
     <string name="settings_content_container_created">已建立容器：%1$s</string>
     <string name="settings_content_download_failed">下載失敗。</string>
     <string name="common_ui_working">處理中…</string>
-    <string name="settings_content_desc_wine">用於執行遊戲與應用的 Windows 相容層。您至少需要安裝一個 Wine 或 FEXCore 版本。</string>
-    <string name="settings_content_desc_proton">Valve 基於 Wine 的建置版本，附帶針對遊戲的額外修補程式。對某些遊戲有用，但標準 Wine 通常也能正常運作。</string>
-    <string name="settings_content_desc_dxvk">將 DirectX 9、10 與 11 轉譯為 Vulkan。通常可提升舊版 Windows 遊戲的效能。</string>
-    <string name="settings_content_desc_vkd3d">將 DirectX 12 轉譯為 Vulkan。許多較新的 Windows 遊戲需要此元件。</string>
-    <string name="settings_content_desc_box64">轉譯 x86 / x64 Windows 程式碼以便在 ARM 裝置上執行。大多數遊戲需要 Box64 或 FEXCore。</string>
-    <string name="settings_content_desc_wowbox64">用於 Wine WoW64 模式的 Box64 建置。僅在使用支援 32 位元應用程式的 64 位元前綴時需要。</string>
-    <string name="settings_content_desc_fexcore">替代的 x86 / x64 轉譯器。如果遊戲在 Box64 上出現問題或效能不佳，請嘗試使用。</string>
+    <string name="settings_content_desc_wine">由 Wine 專案製作；將 Win32 呼叫轉譯為原生 Linux/Android 服務。</string>
+    <string name="settings_content_desc_proton">由 Valve 製作；基於 Wine 的執行階段，包含 Windows 遊戲修補程式。</string>
+    <string name="settings_content_desc_dxvk">將 Direct3D 9、10 與 11 圖形呼叫轉譯為 Vulkan。</string>
+    <string name="settings_content_desc_vkd3d">將 Direct3D 12 圖形呼叫轉譯為 Vulkan。</string>
+    <string name="settings_content_desc_box64">轉譯 x86_64 Linux 程式碼，使其可在 ARM64 裝置上執行。</string>
+    <string name="settings_content_desc_wowbox64">WoW64 使用的 Box64 建置，用於在 64 位元 Wine 中執行 32 位元 Windows 應用程式。</string>
+    <string name="settings_content_desc_fexcore">轉譯 x86 與 x86_64 程式碼，使其可在 ARM64 裝置上執行。</string>
     <string name="settings_content_unable_to_install">無法安裝內容。</string>
     <string name="settings_content_install_failed">安裝失敗</string>
     <string name="settings_content_file_cannot_be_recognized">無法識別檔案。</string>
@@ -835,6 +864,8 @@
     <string name="setup_wizard_denied">已拒絕</string>
     <string name="setup_wizard_allow">允許</string>
     <string name="setup_wizard_installing">正在安裝</string>
+    <string name="setup_wizard_install_failed_reason">安裝失敗：%1$s</string>
+    <string name="setup_wizard_install_failed_detail">%1$s - %2$s</string>
     <string name="setup_wizard_required_access">必要的存取權限</string>
     <string name="setup_wizard_select_components">選擇元件</string>
     <string name="setup_wizard_recommended_wine_proton">推薦 Wine / Proton</string>
@@ -991,4 +1022,24 @@
     <string name="cloud_saves_backing_up">正在備份雲端存檔…</string>
     <string name="cloud_saves_restoring">正在還原雲端存檔…</string>
 
+    <!-- Synced Box64/FEXCore environment help strings -->
+    <string name="box64_env_var_help__aes">Exposes AES CPU capabilities to the guest.</string>
+    <string name="box64_env_var_help__cputype">Selects the Intel or AMD CPU model exposed to the guest.</string>
+    <string name="box64_env_var_help__dynarec_noarch">Reduces dynarec block metadata to save memory, with compatibility tradeoffs.</string>
+    <string name="box64_env_var_help__dynarec_sep">Adds secondary entry points to optimize CALL/RET when CALLRET is enabled.</string>
+    <string name="box64_env_var_help__dynarec_volatile_metadata">Uses PE volatile metadata to guide strong memory emulation for 64-bit Windows games.</string>
+    <string name="box64_env_var_help__dynarec">Enables or disables the Box64 dynamic recompiler.</string>
+    <string name="box64_env_var_help__pclmulqdq">Exposes PCLMULQDQ CPU capabilities to the guest.</string>
+    <string name="box64_env_var_help__shaext">Exposes SHA extension CPU capabilities to the guest.</string>
+    <string name="box64_env_var_help__sse_flushto0">Controls SSE flush-to-zero behavior and exception flag tracking.</string>
+    <string name="box64_env_var_help__sse42">Exposes SSE4.2 CPU capabilities to the guest.</string>
+    <string name="box64_env_var_help__unity">Marks the app as a Unity game and enables Unity-specific compatibility handling.</string>
+    <string name="box64_env_var_help__x87_no80bits">Uses 64-bit double precision instead of 80-bit long double for x87.</string>
+    <string name="fexcore_env_var_help__dynamicl1cachedecreasecountheuristic">Lookups-per-second threshold for shrinking the dynamic L1 cache.</string>
+    <string name="fexcore_env_var_help__dynamicl1cacheincreasecountheuristic">Lookups-per-second threshold for growing the dynamic L1 cache.</string>
+    <string name="fexcore_env_var_help__hidehybrid">Hides hybrid CPU core layout from the guest.</string>
+    <string name="fexcore_env_var_help__kernelunalignedatomicbackpatching">Backpatches kernel-handled unaligned atomics to reduce kernel context switches.</string>
+    <string name="fexcore_env_var_help__maxinst">Maximum number of instructions stored in a compiled block.</string>
+    <string name="fexcore_env_var_help__smcchecks">自修改程式碼檢查。</string>
+    <string name="fexcore_env_var_help__strictinprocesssplitlocks">Uses a strict process-wide lock for split unaligned atomic accesses.</string>
 </resources>

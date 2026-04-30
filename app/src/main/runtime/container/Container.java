@@ -3,7 +3,6 @@ package com.winlator.cmod.runtime.container;
 import android.os.Environment;
 
 import com.winlator.cmod.runtime.compat.box64.Box64Preset;
-import com.winlator.cmod.runtime.wine.DefaultVersion;
 import com.winlator.cmod.runtime.wine.EnvVars;
 import com.winlator.cmod.shared.io.FileUtils;
 import com.winlator.cmod.shared.util.KeyValueSet;
@@ -24,10 +23,10 @@ public class Container {
     public static final String DEFAULT_SCREEN_SIZE = "1280x720";
     public static final String DEFAULT_GRAPHICS_DRIVER = "wrapper";
     public static final String DEFAULT_AUDIO_DRIVER = "alsa";
-    public static final String DEFAULT_EMULATOR = "FEXCore";
-    public static final String DEFAULT_EMULATOR64 = "FEXCore";
+    public static final String DEFAULT_EMULATOR = "Box64";
+    public static final String DEFAULT_EMULATOR64 = "Box64";
     public static final String DEFAULT_DXWRAPPER = "dxvk+vkd3d";
-    public static final String DEFAULT_DXWRAPPERCONFIG = "version=" + DefaultVersion.DXVK + ",framerate=0,async=0,asyncCache=0" + ",vkd3dVersion=" + DefaultVersion.VKD3D + ",vkd3dLevel=12_1" + ",ddrawrapper=" + Container.DEFAULT_DDRAWRAPPER + ",csmt=3" + ",gpuName=NVIDIA GeForce GTX 480" + ",videoMemorySize=2048" + ",strict_shader_math=1" + ",OffscreenRenderingMode=fbo" + ",renderer=gl";
+    public static final String DEFAULT_DXWRAPPERCONFIG = "version=,async=0,asyncCache=0" + ",vkd3dVersion=None,vkd3dLevel=12_1" + ",ddrawrapper=" + Container.DEFAULT_DDRAWRAPPER + ",csmt=3" + ",gpuName=NVIDIA GeForce GTX 480" + ",videoMemorySize=2048" + ",strict_shader_math=1" + ",OffscreenRenderingMode=fbo" + ",renderer=gl";
     public static final String DEFAULT_GRAPHICSDRIVERCONFIG =
             "vulkanVersion=1.3" + ";version=" + ";blacklistedExtensions=" + ";maxDeviceMemory=0" + ";presentMode=mailbox" + ";syncFrame=0" + ";disablePresentWait=1" + ";resourceType=auto" + ";bcnEmulation=none" + ";bcnEmulationType=compute" + ";bcnEmulationCache=0" + ";gpuName=Device";
     public static final String DEFAULT_DDRAWRAPPER = "none";
@@ -50,13 +49,12 @@ public class Container {
     private String audioDriver = DEFAULT_AUDIO_DRIVER;
     private String drives = DEFAULT_DRIVES;
     private String wineVersion = WineInfo.MAIN_WINE_VERSION.identifier();
-    private boolean showFPS;
     private boolean fullscreenStretched;
     private byte startupSelection = STARTUP_SELECTION_ESSENTIAL;
     private String cpuList;
     private String cpuListWoW64;
     private String desktopTheme = WineThemeManager.DEFAULT_DESKTOP_THEME;
-    private String fexcoreVersion = DefaultVersion.FEXCORE;
+    private String fexcoreVersion = "";
     private String fexcorePreset = FEXCorePreset.INTERMEDIATE;
     private String box64Preset = Box64Preset.COMPATIBILITY;
     private File rootDir;
@@ -64,14 +62,14 @@ public class Container {
     private String midiSoundFont = "";
     private int inputType = WinHandler.DEFAULT_INPUT_TYPE;
     private String lc_all = "";
-    private String box64Version = DefaultVersion.BOX64;
+    private String box64Version = "";
     private String emulator = DEFAULT_EMULATOR;
     private String emulator64 = DEFAULT_EMULATOR64;
     private String executablePath = "";
     private String execArgs = "";
     private boolean launchRealSteam;
     private boolean useColdClient = true;
-    private String steamType = DefaultVersion.STEAM_TYPE;
+    private String steamType = "normal";
     private boolean allowSteamUpdates;
     private boolean needsUnpacking = true;
     private boolean forceDlc = false;
@@ -211,15 +209,7 @@ public class Container {
 
     public boolean isFullscreenStretched() { return fullscreenStretched; }
 
-    public boolean isShowFPS() {
-        return showFPS;
-    }
-
     public void setFullscreenStretched(boolean fullscreenStretched) { this.fullscreenStretched = fullscreenStretched; }
-
-    public void setShowFPS(boolean showFPS) {
-        this.showFPS = showFPS;
-    }
 
     public byte getStartupSelection() {
         return startupSelection;
@@ -429,7 +419,6 @@ public class Container {
             data.put("audioDriver", audioDriver);
             data.put("wincomponents", wincomponents);
             data.put("drives", drives);
-            data.put("showFPS", showFPS);
             data.put("fullscreenStretched", fullscreenStretched);
             data.put("inputType", inputType);
             data.put("startupSelection", startupSelection);
@@ -512,9 +501,6 @@ public class Container {
                     break;
                 case "drives" :
                     setDrives(data.getString(key));
-                    break;
-                case "showFPS" :
-                    setShowFPS(data.getBoolean(key));
                     break;
                 case "fullscreenStretched" :
                     setFullscreenStretched(data.getBoolean(key));

@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -115,6 +116,7 @@ private val ChipSurface = Color(0xFF171722)
 private val ChipBorder = Color(0xFF2A2A3A)
 private val DangerRed = Color(0xFFFF6B6B)
 private val WarningAmber = Color(0xFFFFB74D)
+private val SelectableDriveLetters = ('D'..'Y').filter { it != 'E' }.map { "$it" }
 
 // ---------------------------------------------------------------------------
 // Data classes
@@ -122,7 +124,11 @@ private val WarningAmber = Color(0xFFFFB74D)
 data class WinComponentItem(val key: String, val label: String, val selectedIndex: Int)
 data class EnvVarItem(val key: String, val value: String)
 data class ExtraArgGroup(val header: String, val args: List<String>)
-data class DriveItem(val letter: String, val path: String)
+data class DriveItem(
+    val letter: String,
+    val path: String,
+    val canChangeLetter: Boolean = false,
+)
 
 // ---------------------------------------------------------------------------
 // State holder
@@ -155,6 +161,7 @@ class GameSettingsStateHolder {
     val listArtworkSummary = mutableStateOf("")
     val refreshRateEntries = mutableStateOf<List<String>>(emptyList())
     val selectedRefreshRate = mutableIntStateOf(0)
+    val fpsLimit = mutableIntStateOf(0)
 
     // Display
     val graphicsDriverEntries = mutableStateOf<List<String>>(emptyList())
@@ -162,7 +169,6 @@ class GameSettingsStateHolder {
     val graphicsDriverVersion = mutableStateOf("")
     val dxWrapperEntries = mutableStateOf<List<String>>(emptyList())
     val selectedDxWrapper = mutableIntStateOf(0)
-    val showFPS = mutableStateOf(false)
 
     // Graphics Driver Configuration (inline card)
     val gfxConfigExpanded = mutableStateOf(false)
@@ -201,18 +207,16 @@ class GameSettingsStateHolder {
     val dxvkAsyncCache = mutableStateOf(false)
     val dxvkDdrawWrapperEntries = mutableStateOf<List<String>>(emptyList())
     val dxvkSelectedDdrawWrapper = mutableIntStateOf(0)
-    val dxvkFramerateEntries = mutableStateOf<List<String>>(emptyList())
-    val dxvkSelectedFramerate = mutableIntStateOf(0)
 
     // WineD3D Configuration (inline card)
     val wined3dConfigExpanded = mutableStateOf(false)
-    val wined3dCsmtEntries = mutableStateOf(listOf("Enabled", "Disabled"))
+    val wined3dCsmtEntries = mutableStateOf<List<String>>(emptyList())
     val wined3dSelectedCsmt = mutableIntStateOf(0)
     val wined3dGpuNameEntries = mutableStateOf<List<String>>(emptyList())
     val wined3dSelectedGpuName = mutableIntStateOf(0)
     val wined3dVideoMemorySizeEntries = mutableStateOf<List<String>>(emptyList())
     val wined3dSelectedVideoMemorySize = mutableIntStateOf(0)
-    val wined3dStrictShaderMathEntries = mutableStateOf(listOf("Enabled", "Disabled"))
+    val wined3dStrictShaderMathEntries = mutableStateOf<List<String>>(emptyList())
     val wined3dSelectedStrictShaderMath = mutableIntStateOf(0)
     val wined3dOffscreenRenderingModeEntries = mutableStateOf(listOf("fbo", "backbuffer"))
     val wined3dSelectedOffscreenRenderingMode = mutableIntStateOf(0)
@@ -349,6 +353,7 @@ interface GameSettingsCallbacks {
     fun onEmulatorChanged() {}
     fun onWineVersionChanged(versionIndex: Int) {}
     fun onAddDrive() {}
+    fun onDriveLetterChanged(index: Int, newLetter: String) {}
     fun onRemoveDrive(index: Int) {}
     fun onPickDrivePath(index: Int) {}
     fun onPickWallpaper() {}
@@ -1187,6 +1192,51 @@ private fun GeneralSection(
             onSelected = { state.selectedMidiSoundFont.intValue = it }
         )
     }
+
+    if (!isContainer) {
+        Spacer(Modifier.height(16.dp))
+        SettingGroup {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = "FPS Limiter",
+                    color = TextPrimary,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+                val limits = listOf(0, 30, 45, 60, 90, 120)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    limits.forEach { limit ->
+                        val isChecked = state.fpsLimit.intValue == limit
+                        val bgColor = if (isChecked) AccentBlue.copy(alpha = 0.15f) else ChipSurface
+                        val borderColor = if (isChecked) AccentBlue.copy(alpha = 0.4f) else ChipBorder
+                        val textColor = if (isChecked) AccentBlue else TextDim
+
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(bgColor)
+                                .border(1.dp, borderColor, RoundedCornerShape(8.dp))
+                                .clickable { state.fpsLimit.intValue = limit }
+                                .padding(horizontal = 14.dp, vertical = 8.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                if (limit == 0) "None" else "$limit",
+                                color = textColor,
+                                fontSize = 12.sp,
+                                fontWeight = if (isChecked) FontWeight.SemiBold else FontWeight.Normal
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 // ===================================================================
@@ -1236,15 +1286,6 @@ private fun DisplaySection(
         WineD3DConfigCard(state)
     }
 
-    Spacer(Modifier.height(12.dp))
-
-    SettingGroup {
-        SettingCheckbox(
-            label = stringResource(R.string.session_display_show_fps),
-            checked = state.showFPS.value,
-            onCheckedChange = { state.showFPS.value = it }
-        )
-    }
 }
 
 // ===================================================================
@@ -1466,7 +1507,7 @@ private fun ExtensionsMultiSelect(state: GameSettingsStateHolder) {
         ) {
             Text(
                 if (extensions.isEmpty()) "—"
-                else "$enabledCount / ${extensions.size} enabled",
+                else stringResource(R.string.container_graphics_extensions_enabled_summary, enabledCount, extensions.size),
                 color = TextPrimary,
                 fontSize = 14.sp,
                 modifier = Modifier.weight(1f)
@@ -1539,7 +1580,7 @@ private fun ExtensionsPickerDialog(
                         .padding(horizontal = 8.dp, vertical = 3.dp)
                 ) {
                     Text(
-                        "$enabledCount / ${extensions.size}",
+                        stringResource(R.string.container_graphics_extensions_enabled_summary, enabledCount, extensions.size),
                         color = AccentBlue,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Medium
@@ -1651,7 +1692,7 @@ private fun DXVKConfigCard(
             )
             Spacer(Modifier.width(10.dp))
             Text(
-                "DXVK " + stringResource(R.string.container_config_title),
+                stringResource(R.string.container_wine_dxvk_config_title),
                 color = TextPrimary,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Medium,
@@ -1738,15 +1779,6 @@ private fun DXVKConfigCard(
                     selectedIndex = state.dxvkSelectedDdrawWrapper.intValue,
                     onSelected = { state.dxvkSelectedDdrawWrapper.intValue = it }
                 )
-
-                Spacer(Modifier.height(12.dp))
-
-                SettingDropdown(
-                    label = stringResource(R.string.session_display_frame_rate),
-                    entries = state.dxvkFramerateEntries.value,
-                    selectedIndex = state.dxvkSelectedFramerate.intValue,
-                    onSelected = { state.dxvkSelectedFramerate.intValue = it }
-                )
             }
         }
     }
@@ -1782,7 +1814,7 @@ private fun WineD3DConfigCard(state: GameSettingsStateHolder) {
             )
             Spacer(Modifier.width(10.dp))
             Text(
-                "WineD3D " + stringResource(R.string.container_config_title),
+                stringResource(R.string.container_wine_wined3d_config_title),
                 color = TextPrimary,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Medium,
@@ -2100,7 +2132,7 @@ private fun WineSection(
                         ) {
                             Box(Modifier.weight(1f)) {
                                 SettingTextField(
-                                    label = "Color (hex)",
+                                    label = stringResource(R.string.settings_general_background_color_hex),
                                     value = state.desktopBackgroundColor.value,
                                     onValueChange = { state.desktopBackgroundColor.value = it }
                                 )
@@ -2133,8 +2165,11 @@ private fun WineSection(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                if (state.desktopWallpaperSelected.value) "Wallpaper selected"
-                                else "Select wallpaper",
+                                if (state.desktopWallpaperSelected.value) {
+                                    stringResource(R.string.settings_general_wallpaper_selected)
+                                } else {
+                                    stringResource(R.string.settings_general_select_wallpaper)
+                                },
                                 color = if (state.desktopWallpaperSelected.value) TextPrimary else TextSecondary,
                                 fontSize = 12.sp,
                                 modifier = Modifier.weight(1f)
@@ -2388,6 +2423,16 @@ private fun VariablesSection(
                 )
             } else {
                 drives.forEachIndexed { index, drive ->
+                    val otherLetters =
+                        drives
+                            .mapIndexedNotNull { otherIndex, otherDrive ->
+                                otherDrive.letter.takeUnless { otherIndex == index }?.uppercase()
+                            }.toSet()
+                    val availableLetters =
+                        SelectableDriveLetters.filter { letter ->
+                            letter.equals(drive.letter, ignoreCase = true) || letter !in otherLetters
+                        }
+
                     if (index > 0) {
                         Spacer(Modifier.height(2.dp))
                         Box(Modifier.fillMaxWidth().height(1.dp).background(DividerColor))
@@ -2399,21 +2444,12 @@ private fun VariablesSection(
                             .padding(vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(width = 38.dp, height = 32.dp)
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(AccentBlue.copy(alpha = 0.1f))
-                                .border(1.dp, AccentBlue.copy(alpha = 0.3f), RoundedCornerShape(6.dp)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                "${drive.letter}:",
-                                color = AccentBlue,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
+                        DriveLetterSelector(
+                            selectedLetter = drive.letter.uppercase(),
+                            canChangeLetter = drive.canChangeLetter,
+                            availableLetters = availableLetters,
+                            onSelected = { callbacks.onDriveLetterChanged(index, it) },
+                        )
                         Spacer(Modifier.width(10.dp))
                         Box(
                             modifier = Modifier
@@ -2425,7 +2461,7 @@ private fun VariablesSection(
                                 .padding(horizontal = 12.dp, vertical = 10.dp)
                         ) {
                             Text(
-                                drive.path.ifEmpty { "Select a folder" },
+                                drive.path.ifEmpty { stringResource(R.string.common_ui_select_folder) },
                                 color = if (drive.path.isEmpty()) TextDim else TextPrimary,
                                 fontSize = 12.sp,
                                 maxLines = 1,
@@ -2475,6 +2511,87 @@ private fun VariablesSection(
                         color = AccentBlue,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Medium
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DriveLetterSelector(
+    selectedLetter: String,
+    canChangeLetter: Boolean,
+    availableLetters: List<String>,
+    onSelected: (String) -> Unit,
+) {
+    var expanded by remember(selectedLetter, availableLetters) { mutableStateOf(false) }
+    val showDropdown = canChangeLetter && availableLetters.size > 1
+
+    Box {
+        Row(
+            modifier =
+                Modifier
+                    .widthIn(min = 64.dp)
+                    .height(32.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(AccentBlue.copy(alpha = 0.1f))
+                    .border(1.dp, AccentBlue.copy(alpha = 0.3f), RoundedCornerShape(6.dp))
+                    .clickable(
+                        enabled = showDropdown,
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                    ) { expanded = true }
+                    .padding(horizontal = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center,
+        ) {
+            Text(
+                "$selectedLetter:",
+                color = AccentBlue,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+            if (showDropdown) {
+                Spacer(Modifier.width(4.dp))
+                Icon(
+                    Icons.Outlined.KeyboardArrowDown,
+                    contentDescription = null,
+                    tint = AccentBlue,
+                    modifier = Modifier.size(14.dp),
+                )
+            }
+        }
+
+        DropdownMenu(
+            expanded = showDropdown && expanded,
+            onDismissRequest = { expanded = false },
+            shape = RoundedCornerShape(8.dp),
+            containerColor = CardSurface,
+            modifier = Modifier.widthIn(min = 88.dp),
+        ) {
+            Column(
+                modifier =
+                    Modifier
+                        .heightIn(max = 240.dp)
+                        .verticalScroll(rememberScrollState()),
+            ) {
+                availableLetters.forEach { letter ->
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                "$letter:",
+                                color = if (letter == selectedLetter) AccentBlue else TextPrimary,
+                                fontSize = 13.sp,
+                                fontWeight =
+                                    if (letter == selectedLetter) FontWeight.SemiBold
+                                    else FontWeight.Normal,
+                            )
+                        },
+                        onClick = {
+                            onSelected(letter)
+                            expanded = false
+                        },
                     )
                 }
             }
@@ -2857,7 +2974,7 @@ private fun EnvValueTextField(
                     .padding(horizontal = 12.dp, vertical = 10.dp)
             ) {
                 if (value.isEmpty()) {
-                    Text("value", color = TextDim, fontSize = 13.sp)
+                    Text(stringResource(R.string.common_ui_value), color = TextDim, fontSize = 13.sp)
                 }
                 innerTextField()
             }
@@ -3118,7 +3235,7 @@ private fun AdvancedSection(
                 state.selectedEmulator64.intValue = it
                 callbacks.onEmulatorChanged()
             },
-            enabled = state.emulator64Entries.value.size > 1
+            enabled = state.emulator64Entries.value.isNotEmpty()
         )
         Spacer(Modifier.height(14.dp))
         SettingDropdown(
@@ -3129,7 +3246,7 @@ private fun AdvancedSection(
                 state.selectedEmulator.intValue = it
                 callbacks.onEmulatorChanged()
             },
-            enabled = state.emulator32Entries.value.size > 1
+            enabled = state.emulator32Entries.value.isNotEmpty()
         )
     }
     Spacer(Modifier.height(16.dp))
@@ -3161,14 +3278,16 @@ private fun AdvancedSection(
     if (state.showBox64Frame.value) {
         val box64Usage = emulatorUsageLabel(state, setOf("box64", "wowbox64"))
         val box64Id32 = state.emulator32Entries.value
-            .getOrNull(state.selectedEmulator.intValue)?.lowercase() ?: ""
+            .getOrNull(state.selectedEmulator.intValue)
+            ?.let { com.winlator.cmod.shared.util.StringUtils.parseIdentifier(it) } ?: ""
         val box64Id64 = state.emulator64Entries.value
-            .getOrNull(state.selectedEmulator64.intValue)?.lowercase() ?: ""
+            .getOrNull(state.selectedEmulator64.intValue)
+            ?.let { com.winlator.cmod.shared.util.StringUtils.parseIdentifier(it) } ?: ""
         val usesPlainBox64 = box64Id32 == "box64" || box64Id64 == "box64"
         val usesWowbox64 = box64Id32 == "wowbox64" || box64Id64 == "wowbox64"
         val box64Title = when {
-            usesPlainBox64 && usesWowbox64 -> "Box64 / Wowbox64"
-            usesWowbox64 -> "Wowbox64"
+            usesPlainBox64 && usesWowbox64 -> stringResource(R.string.container_box64_wowbox64_title)
+            usesWowbox64 -> stringResource(R.string.container_wowbox64_title)
             else -> stringResource(R.string.container_box64_title)
         }
         EmulatorSectionHeader(box64Title, box64Usage)
@@ -3253,9 +3372,15 @@ private fun AdvancedSection(
                     index = i,
                     isChecked = isChecked,
                     onClick = {
-                        val mutable = checkedList.toMutableList()
-                        mutable[i] = !isChecked
-                        state.cpuChecked.value = mutable
+                        // Block unchecking the last remaining core: zero-selected
+                        // and all-selected would otherwise serialize identically,
+                        // and runtime skips affinity for a zero mask.
+                        val wouldLeaveNone = isChecked && checkedList.count { it } <= 1
+                        if (!wouldLeaveNone) {
+                            val mutable = checkedList.toMutableList()
+                            mutable[i] = !isChecked
+                            state.cpuChecked.value = mutable
+                        }
                     }
                 )
             }
@@ -3280,9 +3405,12 @@ private fun AdvancedSection(
                     index = i,
                     isChecked = isChecked,
                     onClick = {
-                        val mutable = checkedList.toMutableList()
-                        mutable[i] = !isChecked
-                        state.cpuCheckedWoW64.value = mutable
+                        val wouldLeaveNone = isChecked && checkedList.count { it } <= 1
+                        if (!wouldLeaveNone) {
+                            val mutable = checkedList.toMutableList()
+                            mutable[i] = !isChecked
+                            state.cpuCheckedWoW64.value = mutable
+                        }
                     }
                 )
             }
@@ -3447,6 +3575,7 @@ private fun SubsectionLabel(text: String) {
 }
 
 // Returns the architecture badge for the slots currently using one of [ids].
+@Composable
 private fun emulatorUsageLabel(
     state: GameSettingsStateHolder,
     ids: Set<String>
@@ -3458,9 +3587,9 @@ private fun emulatorUsageLabel(
     val used32 = id32 in ids
     val used64 = id64 in ids
     return when {
-        used32 && used64 -> "64-BIT & 32-BIT"
-        used64 -> "64-BIT"
-        used32 -> "32-BIT"
+        used32 && used64 -> stringResource(R.string.common_ui_64_bit_and_32_bit)
+        used64 -> stringResource(R.string.common_ui_64_bit)
+        used32 -> stringResource(R.string.common_ui_32_bit)
         else -> null
     }
 }

@@ -13,7 +13,6 @@ import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
@@ -38,12 +37,14 @@ import com.winlator.cmod.runtime.input.controls.ExternalControllerBinding
 import com.winlator.cmod.runtime.input.controls.InputControlsManager
 import com.winlator.cmod.runtime.input.ui.InputControlsView
 import com.winlator.cmod.shared.android.AppUtils
+import com.winlator.cmod.shared.android.DirectoryPickerDialog
 import com.winlator.cmod.shared.io.FileUtils
 import com.winlator.cmod.shared.io.HttpUtils
 import com.winlator.cmod.shared.math.Mathf
 import com.winlator.cmod.shared.ui.dialog.ContentDialog
 import com.winlator.cmod.shared.theme.WinNativeTheme
 import org.json.JSONObject
+import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -75,46 +76,6 @@ class InputControlsFragment : Fragment() {
     private var gyroListener: SensorEventListener? = null
     private var gyroPreviewView: InputControlsView? = null
     private val remoteProfileRequestInFlight = AtomicBoolean(false)
-
-    private val importProfileLauncher =
-        registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-            if (uri == null || !isAdded) return@registerForActivityResult
-            try {
-                val jsonString = FileUtils.readString(requireContext(), uri)
-                if (jsonString.isNullOrBlank()) {
-                    AppUtils.showToast(
-                        requireContext(),
-                        getString(R.string.input_controls_editor_unable_to_import) + ": Empty file",
-                    )
-                    return@registerForActivityResult
-                }
-
-                val imported =
-                    runCatching {
-                        manager.importProfile(JSONObject(jsonString))
-                    }.getOrNull()
-
-                if (imported != null) {
-                    currentProfile = imported
-                    persistSelectedProfileId()
-                    refreshVisibleControllers()
-                    publishUiState()
-                } else {
-                    manager.loadProfiles(false)
-                    refreshVisibleControllers()
-                    publishUiState()
-                    AppUtils.showToast(
-                        requireContext(),
-                        getString(R.string.input_controls_editor_unable_to_import) + ": Invalid profile data",
-                    )
-                }
-            } catch (e: Exception) {
-                AppUtils.showToast(
-                    requireContext(),
-                    getString(R.string.input_controls_editor_unable_to_import) + ": " + e.message,
-                )
-            }
-        }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -168,9 +129,6 @@ class InputControlsFragment : Fragment() {
                                 onGyroscopeEnabledChanged = { enabled ->
                                     val editor = preferences.edit()
                                     editor.putBoolean("gyro_enabled", enabled)
-                                    if (!enabled) {
-                                        editor.putBoolean("mouse_gyro_enabled", false)
-                                    }
                                     editor.apply()
                                     publishUiState()
                                 },
@@ -222,7 +180,7 @@ class InputControlsFragment : Fragment() {
                                     triggerTypeExpanded = expanded
                                     publishUiState()
                                 },
-                                onImportProfile = { importProfileLauncher.launch(arrayOf("*/*")) },
+                                onImportProfile = { promptImportProfile() },
                                 onDownloadProfile = ::downloadProfileList,
                                 onExportProfile = ::exportProfile,
                                 onControllerExpandedToggle = ::toggleControllerExpanded,
@@ -329,7 +287,7 @@ class InputControlsFragment : Fragment() {
                 selectedProfileName = profile?.name,
                 selectedProfileElementCount = profile?.elementCountFromFile ?: 0,
                 overlayOpacity = (preferences.getFloat("overlay_opacity", InputControlsView.DEFAULT_OVERLAY_OPACITY) * 100).toInt(),
-                gyroscopeEnabled = preferences.getBoolean("gyro_enabled", false) || preferences.getBoolean("mouse_gyro_enabled", false),
+                gyroscopeEnabled = preferences.getBoolean("gyro_enabled", false),
                 gyroscopeModeIndex = preferences.getInt("gyro_mode", 0),
                 gyroscopeActivatorLabel = currentGyroActivatorLabel(),
                 rightStickGyroEnabled = preferences.getBoolean("process_gyro_with_left_trigger", false),
@@ -706,6 +664,55 @@ class InputControlsFragment : Fragment() {
                 if (data.has("downloadSource")) data.optString("downloadSource") else null
             }
         }.getOrNull()
+    }
+
+    private fun promptImportProfile() {
+        val activity = activity ?: return
+        DirectoryPickerDialog.showFile(
+            activity = activity,
+            title = getString(R.string.input_controls_editor_import_profile),
+            allowedExtensions = setOf("icp"),
+        ) { path ->
+            if (!isAdded) return@showFile
+            importProfileFromJson(FileUtils.readString(File(path)))
+        }
+    }
+
+    private fun importProfileFromJson(jsonString: String?) {
+        try {
+            if (jsonString.isNullOrBlank()) {
+                AppUtils.showToast(
+                    requireContext(),
+                    getString(R.string.input_controls_editor_unable_to_import) + ": Empty file",
+                )
+                return
+            }
+
+            val imported =
+                runCatching {
+                    manager.importProfile(JSONObject(jsonString))
+                }.getOrNull()
+
+            if (imported != null) {
+                currentProfile = imported
+                persistSelectedProfileId()
+                refreshVisibleControllers()
+                publishUiState()
+            } else {
+                manager.loadProfiles(false)
+                refreshVisibleControllers()
+                publishUiState()
+                AppUtils.showToast(
+                    requireContext(),
+                    getString(R.string.input_controls_editor_unable_to_import) + ": Invalid profile data",
+                )
+            }
+        } catch (e: Exception) {
+            AppUtils.showToast(
+                requireContext(),
+                getString(R.string.input_controls_editor_unable_to_import) + ": " + e.message,
+            )
+        }
     }
 
     private fun exportProfile() {

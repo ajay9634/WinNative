@@ -27,6 +27,7 @@ import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
@@ -77,8 +78,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowLeft
-import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -103,6 +102,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -191,9 +191,11 @@ import com.winlator.cmod.runtime.wine.PeIconExtractor
 import com.winlator.cmod.shared.android.ActivityResultHost
 import com.winlator.cmod.shared.android.AppTerminationHelper
 import com.winlator.cmod.shared.android.AppUtils
+import com.winlator.cmod.shared.android.DirectoryPickerDialog
 import com.winlator.cmod.shared.android.FixedFontScaleAppCompatActivity
 import com.winlator.cmod.shared.android.RefreshRateUtils
 import com.winlator.cmod.shared.io.StorageUtils
+import com.winlator.cmod.shared.io.FileUtils
 import com.winlator.cmod.shared.ui.CarouselView
 import com.winlator.cmod.shared.ui.FourByTwoGridView
 import com.winlator.cmod.shared.ui.JoystickGridScroll
@@ -226,6 +228,24 @@ private val DangerRed = Color(0xFFFF6B6B)
 private val StatusOnline = Color(0xFF3FB950)
 private val StatusAway = Color(0xFFF0C040)
 private val StatusOffline = Color(0xFF6E7681)
+private val DownloadCardBlack = Color.Black.copy(alpha = 0.46f)
+private val DownloadCardSelectedBlack = Color.Black.copy(alpha = 0.58f)
+private val DownloadButtonBlack = Color.Black.copy(alpha = 0.38f)
+private val DownloadChaseBlue = Color(0xFF2196F3)
+private val DownloadChaseSky = Color(0xFF29B6F6)
+private val DownloadChaseCyan = Color(0xFF00E5FF)
+private val DownloadChaseGradientStops =
+    arrayOf(
+        0.00f to DownloadChaseBlue,
+        0.125f to DownloadChaseSky,
+        0.25f to DownloadChaseCyan,
+        0.375f to DownloadChaseSky,
+        0.50f to DownloadChaseBlue,
+        0.625f to DownloadChaseSky,
+        0.75f to DownloadChaseCyan,
+        0.875f to DownloadChaseSky,
+        1.00f to DownloadChaseBlue,
+    )
 private val TabScreenHorizontalPadding = 16.dp
 private val TabScreenBottomPadding = 8.dp
 private val UnifiedTopBarHorizontalPadding = 8.dp
@@ -305,6 +325,8 @@ class UnifiedActivity :
     // hit cold-start work here and can stall input.
     private var startupBootstrapReady by mutableStateOf(false)
     private var startupLibraryLayoutMode by mutableStateOf<LibraryLayoutMode?>(null)
+    private var startupStoreVisible: Map<String, Boolean>? = null
+    private var startupContentFilters: Map<String, Boolean>? = null
 
     // LibraryCarousel is always composed (kept alive behind an alpha(0f) when
     // another tab is active). This flag lets GameCapsule skip its animation
@@ -563,6 +585,9 @@ class UnifiedActivity :
     }
 
     override fun onDestroy() {
+        if (isFinishing && !isChangingConfigurations) {
+            DownloadService.clearCompletedDownloads()
+        }
         supportFragmentManager.unregisterFragmentLifecycleCallbacks(inputControlsFragmentTracker)
         if (instance === this) {
             instance = null
@@ -718,6 +743,8 @@ class UnifiedActivity :
     private fun bootstrapStartupState() {
         startupBootstrapReady = false
         startupLibraryLayoutMode = null
+        startupStoreVisible = null
+        startupContentFilters = null
 
         lifecycleScope.launch(Dispatchers.IO) {
             val appContext = applicationContext
@@ -729,6 +756,23 @@ class UnifiedActivity :
                     Log.w("UnifiedActivity", "Failed to resolve initial library layout", error)
                     LibraryLayoutMode.GRID_4
                 }
+
+            val resolvedStoreVisible =
+                runCatching {
+                    val saved = PrefManager.libraryStoreVisible.split(",").toSet()
+                    mapOf("steam" to ("steam" in saved), "epic" to ("epic" in saved), "gog" to ("gog" in saved))
+                }.getOrElse { mapOf("steam" to true, "epic" to true, "gog" to true) }
+
+            val resolvedContentFilters =
+                runCatching {
+                    val saved = PrefManager.libraryContentFilters.split(",").toSet()
+                    mapOf(
+                        "games" to ("games" in saved),
+                        "dlc" to ("dlc" in saved),
+                        "applications" to ("applications" in saved),
+                        "tools" to ("tools" in saved),
+                    )
+                }.getOrElse { mapOf("games" to true, "dlc" to false, "applications" to false, "tools" to false) }
 
             runCatching { dbProvider.get() }
                 .onFailure { Log.w("UnifiedActivity", "Database warmup failed", it) }
@@ -742,6 +786,8 @@ class UnifiedActivity :
             withContext(Dispatchers.Main.immediate) {
                 startupLibraryLayoutMode = resolvedLayoutMode
                 currentLibraryLayoutMode = resolvedLayoutMode
+                startupStoreVisible = resolvedStoreVisible
+                startupContentFilters = resolvedContentFilters
                 startupBootstrapReady = true
             }
         }
@@ -1054,13 +1100,18 @@ class UnifiedActivity :
     // Main scaffold
     @Composable
     fun UnifiedHub() {
+        val horizontalNavigationInsets =
+            WindowInsets.navigationBars.only(WindowInsetsSides.Horizontal)
         val initialLibraryLayoutMode = startupLibraryLayoutMode
+        val initialStoreVisible = startupStoreVisible ?: mapOf("steam" to true, "epic" to true, "gog" to true)
+        val initialContentFilters = startupContentFilters ?: mapOf("games" to true, "dlc" to false, "applications" to false, "tools" to false)
         if (!startupBootstrapReady || initialLibraryLayoutMode == null) {
             Box(
                 modifier =
                     Modifier
                         .fillMaxSize()
-                        .background(BgDark),
+                        .background(BgDark)
+                        .windowInsetsPadding(horizontalNavigationInsets),
                 contentAlignment = Alignment.Center,
             ) {
                 Column(
@@ -1078,7 +1129,7 @@ class UnifiedActivity :
             return
         }
 
-        val storeVisible = remember { mutableStateMapOf("steam" to true, "epic" to true, "gog" to true) }
+        val storeVisible = remember { mutableStateMapOf(*initialStoreVisible.entries.map { it.key to it.value }.toTypedArray()) }
         var showAddCustomGame by remember { mutableStateOf(false) }
         var showExitDialog by remember { mutableStateOf(false) }
         var searchQueryTfv by remember { mutableStateOf(TextFieldValue("")) }
@@ -1092,7 +1143,7 @@ class UnifiedActivity :
         val shortcutRefreshKey = libraryRefreshKey + shortcutDataRefreshKey
         val playtimeRefreshKey = this@UnifiedActivity.libraryPlaytimeRefreshSignal
 
-        val contentFilters = remember { mutableStateMapOf("games" to true, "dlc" to false, "applications" to false, "tools" to false) }
+        val contentFilters = remember { mutableStateMapOf(*initialContentFilters.entries.map { it.key to it.value }.toTypedArray()) }
         var libraryLayoutMode by remember {
             mutableStateOf(
                 initialLibraryLayoutMode,
@@ -1382,13 +1433,26 @@ class UnifiedActivity :
                         libraryLayoutMode = it
                         PrefManager.libraryLayoutMode = it.name
                     },
+                    onStoreVisibleChanged = { key, value ->
+                        storeVisible[key] = value
+                        PrefManager.libraryStoreVisible = storeVisible.entries.filter { it.value }.joinToString(",") { it.key }
+                    },
+                    onContentFiltersChanged = { key, value ->
+                        contentFilters[key] = value
+                        PrefManager.libraryContentFilters = contentFilters.entries.filter { it.value }.joinToString(",") { it.key }
+                    },
                     onClose = { scope.launch { drawerState.close() } },
                 )
             },
             scrimColor = Color.Black.copy(alpha = 0.5f),
             gesturesEnabled = true,
         ) {
-            Box(Modifier.fillMaxSize().background(BgDark)) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(BgDark)
+                    .windowInsetsPadding(horizontalNavigationInsets),
+            ) {
                 Scaffold(
                     containerColor = BgDark,
                     contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -1476,7 +1540,11 @@ class UnifiedActivity :
                             ) { animatedKey ->
                                 when (animatedKey) {
                                     "downloads" -> {
-                                        DownloadsTab(selectedDownloadId, onSelectDownload = { selectedDownloadId = it })
+                                        DownloadsTab(
+                                            selectedDownloadId,
+                                            animationsActive = key == "downloads",
+                                            onSelectDownload = { selectedDownloadId = it },
+                                        )
                                     }
 
                                     "steam" -> {
@@ -1513,9 +1581,7 @@ class UnifiedActivity :
                                     Modifier
                                         .align(Alignment.BottomEnd)
                                         .windowInsetsPadding(
-                                            WindowInsets.navigationBars.only(
-                                                WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom,
-                                            ),
+                                            WindowInsets.navigationBars.only(WindowInsetsSides.Bottom),
                                         )
                                         .padding(end = addGameFabMargin, bottom = addGameFabMargin)
                                         .size(addGameFabSize)
@@ -1675,7 +1741,6 @@ class UnifiedActivity :
                 modifier =
                     Modifier
                         .fillMaxWidth()
-                        .windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Horizontal))
                         .padding(
                             start = UnifiedTopBarHorizontalPadding,
                             end = UnifiedTopBarHorizontalPadding,
@@ -1697,6 +1762,8 @@ class UnifiedActivity :
                         androidx.compose.material3.LocalRippleConfiguration provides null,
                     ) {
                         val tabWidth = 100.dp
+                        val tabSideGutter = 12.dp
+                        val tabBarShape = RoundedCornerShape(18.dp)
                         val visibleCount = minOf(3, tabs.size)
                         val tabListState = rememberLazyListState()
                         val snapFlingBehavior = rememberSnapFlingBehavior(lazyListState = tabListState)
@@ -1709,19 +1776,21 @@ class UnifiedActivity :
                         Box(
                             modifier =
                                 Modifier
-                                    .width(tabWidth * visibleCount)
+                                    .width(tabWidth * visibleCount + tabSideGutter * 2)
                                     .height(44.dp)
-                                    .shadow(8.dp, RoundedCornerShape(24.dp), spotColor = Color.Black.copy(alpha = 0.5f))
-                                    .clip(RoundedCornerShape(24.dp))
+                                    .shadow(8.dp, tabBarShape, spotColor = Color.Black.copy(alpha = 0.5f))
+                                    .clip(tabBarShape)
                                     .background(CardDark)
-                                    .border(1.dp, CardBorder, RoundedCornerShape(24.dp)),
+                                    .border(1.dp, CardBorder, tabBarShape),
                         ) {
                             LazyRow(
                                 state = tabListState,
                                 flingBehavior = snapFlingBehavior,
                                 modifier =
                                     Modifier
-                                        .fillMaxSize()
+                                        .align(Alignment.Center)
+                                        .width(tabWidth * visibleCount)
+                                        .fillMaxHeight()
                                         .focusProperties { canFocus = !isLibraryTab },
                                 userScrollEnabled = tabs.size > visibleCount,
                             ) {
@@ -2026,14 +2095,18 @@ class UnifiedActivity :
         // Load all shortcuts once and cache for both custom app discovery and GameCapsule icon lookup
         var cachedShortcuts by remember { mutableStateOf<List<Shortcut>>(emptyList()) }
         var customApps by remember { mutableStateOf<List<SteamApp>>(emptyList()) }
+        var localLibraryRefreshKey by remember { mutableIntStateOf(0) }
         var shortcutsLoaded by remember { mutableStateOf(false) }
-        LaunchedEffect(shortcutRefreshKey) {
+        LaunchedEffect(shortcutRefreshKey, localLibraryRefreshKey) {
             shortcutsLoaded = false
 
             val shortcutScanResult =
                 runCatching {
                     withContext(Dispatchers.IO) {
                         val cm = ContainerManager(context)
+                        cm.upgradeShortcuts {
+                            localLibraryRefreshKey++
+                        }
                         val allShortcuts = cm.loadShortcuts()
                         val apps =
                             allShortcuts
@@ -2046,7 +2119,14 @@ class UnifiedActivity :
                                         shortcut
                                             .getExtra("custom_name", shortcut.name)
                                             .ifBlank { shortcut.name }
-                                    val customId = -(displayName.hashCode().and(0x7FFFFFFF) + 1)
+                                    
+                                    val uuid = shortcut.getExtra("uuid")
+                                    val customId = if (uuid.isNotEmpty()) {
+                                        // Use UUID hash to ensure ID stability across renames
+                                        -(uuid.hashCode().and(0x7FFFFFFF) + 1)
+                                    } else {
+                                        -(displayName.hashCode().and(0x7FFFFFFF) + 1)
+                                    }
 
                                     SteamApp(
                                         id = customId,
@@ -3475,7 +3555,8 @@ class UnifiedActivity :
                                                 context,
                                                 getString(
                                                     R.string.library_games_failed_to_uninstall_reason,
-                                                    result.exceptionOrNull()?.message ?: "Unknown error",
+                                                    result.exceptionOrNull()?.message
+                                                        ?: getString(R.string.common_ui_unknown_error),
                                                 ),
                                                 android.widget.Toast.LENGTH_LONG,
                                             )
@@ -3808,16 +3889,28 @@ class UnifiedActivity :
                         message = getString(R.string.library_games_uninstall_confirm, app.title),
                         onConfirm = {
                             scope.launch(Dispatchers.IO) {
-                                GOGService.deleteGame(
+                                val result = GOGService.deleteGame(
                                     context,
                                     LibraryItem("GOG_${app.id}", app.title, com.winlator.cmod.feature.stores.steam.enums.GameSource.GOG),
                                 )
                                 withContext(Dispatchers.Main) {
-                                    com.winlator.cmod.shared.android.AppUtils.showToast(
-                                        context,
-                                        getString(R.string.library_games_game_uninstalled, app.title),
-                                        android.widget.Toast.LENGTH_SHORT,
-                                    )
+                                    if (result.isSuccess) {
+                                        com.winlator.cmod.shared.android.AppUtils.showToast(
+                                            context,
+                                            getString(R.string.library_games_game_uninstalled, app.title),
+                                            android.widget.Toast.LENGTH_SHORT,
+                                        )
+                                    } else {
+                                        com.winlator.cmod.shared.android.AppUtils.showToast(
+                                            context,
+                                            getString(
+                                                R.string.library_games_failed_to_uninstall_reason,
+                                                result.exceptionOrNull()?.message
+                                                    ?: getString(R.string.common_ui_unknown_error),
+                                            ),
+                                            android.widget.Toast.LENGTH_LONG,
+                                        )
+                                    }
                                     onDismissRequest()
                                 }
                             }
@@ -4862,7 +4955,7 @@ class UnifiedActivity :
                                         onConfirm = {
                                             if (isGog) {
                                                 scope.launch(Dispatchers.IO) {
-                                                    GOGService.deleteGame(
+                                                    val result = GOGService.deleteGame(
                                                         context,
                                                         LibraryItem(
                                                             "GOG_${gogGame!!.id}",
@@ -4871,11 +4964,23 @@ class UnifiedActivity :
                                                         ),
                                                     )
                                                     withContext(Dispatchers.Main) {
-                                                        com.winlator.cmod.shared.android.AppUtils.showToast(
-                                                            context,
-                                                            getString(R.string.library_games_game_uninstalled, app.name),
-                                                            android.widget.Toast.LENGTH_SHORT,
-                                                        )
+                                                        if (result.isSuccess) {
+                                                            com.winlator.cmod.shared.android.AppUtils.showToast(
+                                                                context,
+                                                                getString(R.string.library_games_game_uninstalled, app.name),
+                                                                android.widget.Toast.LENGTH_SHORT,
+                                                            )
+                                                        } else {
+                                                            com.winlator.cmod.shared.android.AppUtils.showToast(
+                                                                context,
+                                                                getString(
+                                                                    R.string.library_games_failed_to_uninstall_reason,
+                                                                    result.exceptionOrNull()?.message
+                                                                        ?: getString(R.string.common_ui_unknown_error),
+                                                                ),
+                                                                android.widget.Toast.LENGTH_LONG,
+                                                            )
+                                                        }
                                                         onDismissRequest()
                                                     }
                                                 }
@@ -5962,17 +6067,16 @@ class UnifiedActivity :
         var showCustomPathWarning by remember { mutableStateOf(false) }
         var showDlcDialog by remember { mutableStateOf(false) }
 
-        val folderPickerLauncher =
-            rememberLauncherForActivityResult(
-                contract = ActivityResultContracts.OpenDocumentTree(),
-            ) { uri -> uri?.let { customPath = getPathFromTreeUri(it) } }
-
         if (showCustomPathWarning) {
             CustomPathWarningDialog(
                 onDismiss = { showCustomPathWarning = false },
                 onProceed = {
                     showCustomPathWarning = false
-                    folderPickerLauncher.launch(null)
+                    DirectoryPickerDialog.show(
+                        activity = this@UnifiedActivity,
+                        initialPath = customPath ?: EpicConstants.getGameInstallPath(context, app.appName),
+                        title = getString(R.string.settings_content_install_directory),
+                    ) { path -> customPath = path }
                 },
             )
         }
@@ -6129,9 +6233,22 @@ class UnifiedActivity :
                     bgColor = DangerRed.copy(alpha = 0.12f),
                     onClick = {
                         scope.launch(Dispatchers.IO) {
-                            EpicService.deleteGame(context, app.id)
+                            val result = EpicService.deleteGame(context, app.id)
+                            withContext(Dispatchers.Main) {
+                                if (!result.isSuccess) {
+                                    com.winlator.cmod.shared.android.AppUtils.showToast(
+                                        context,
+                                        getString(
+                                            R.string.library_games_failed_to_uninstall_reason,
+                                            result.exceptionOrNull()?.message
+                                                ?: getString(R.string.common_ui_unknown_error),
+                                        ),
+                                        android.widget.Toast.LENGTH_LONG,
+                                    )
+                                }
+                                onDismissRequest()
+                            }
                         }
-                        onDismissRequest()
                     },
                 )
             } else {
@@ -6170,7 +6287,11 @@ class UnifiedActivity :
                             if (customPath == null && defaultPathSet) {
                                 showCustomPathWarning = true
                             } else {
-                                folderPickerLauncher.launch(null)
+                                DirectoryPickerDialog.show(
+                                    activity = this@UnifiedActivity,
+                                    initialPath = customPath ?: EpicConstants.getGameInstallPath(context, app.appName),
+                                    title = getString(R.string.settings_content_install_directory),
+                                ) { path -> customPath = path }
                             }
                         },
                     )
@@ -6395,17 +6516,16 @@ class UnifiedActivity :
         var customPath by remember { mutableStateOf<String?>(null) }
         var showCustomPathWarning by remember { mutableStateOf(false) }
 
-        val folderPickerLauncher =
-            rememberLauncherForActivityResult(
-                contract = ActivityResultContracts.OpenDocumentTree(),
-            ) { uri -> uri?.let { customPath = getPathFromTreeUri(it) } }
-
         if (showCustomPathWarning) {
             CustomPathWarningDialog(
                 onDismiss = { showCustomPathWarning = false },
                 onProceed = {
                     showCustomPathWarning = false
-                    folderPickerLauncher.launch(null)
+                    DirectoryPickerDialog.show(
+                        activity = this@UnifiedActivity,
+                        initialPath = customPath ?: GOGConstants.defaultGOGGamesPath,
+                        title = getString(R.string.settings_content_install_directory),
+                    ) { path -> customPath = path }
                 },
             )
         }
@@ -6499,11 +6619,24 @@ class UnifiedActivity :
                     bgColor = DangerRed.copy(alpha = 0.12f),
                     onClick = {
                         scope.launch(Dispatchers.IO) {
-                            GOGService.deleteGame(
+                            val result = GOGService.deleteGame(
                                 context,
                                 LibraryItem("GOG_${app.id}", app.title, com.winlator.cmod.feature.stores.steam.enums.GameSource.GOG),
                             )
-                            withContext(Dispatchers.Main) { onDismissRequest() }
+                            withContext(Dispatchers.Main) {
+                                if (!result.isSuccess) {
+                                    com.winlator.cmod.shared.android.AppUtils.showToast(
+                                        context,
+                                        getString(
+                                            R.string.library_games_failed_to_uninstall_reason,
+                                            result.exceptionOrNull()?.message
+                                                ?: getString(R.string.common_ui_unknown_error),
+                                        ),
+                                        android.widget.Toast.LENGTH_LONG,
+                                    )
+                                }
+                                onDismissRequest()
+                            }
                         }
                     },
                 )
@@ -6530,7 +6663,11 @@ class UnifiedActivity :
                         if (customPath == null && defaultPathSet) {
                             showCustomPathWarning = true
                         } else {
-                            folderPickerLauncher.launch(null)
+                            DirectoryPickerDialog.show(
+                                activity = this@UnifiedActivity,
+                                initialPath = customPath ?: GOGConstants.defaultGOGGamesPath,
+                                title = getString(R.string.settings_content_install_directory),
+                            ) { path -> customPath = path }
                         }
                     },
                 )
@@ -6847,6 +6984,7 @@ class UnifiedActivity :
     @Composable
     fun DownloadsTab(
         selectedId: String?,
+        animationsActive: Boolean = true,
         onSelectDownload: (String?) -> Unit,
     ) {
         val downloads = remember { mutableStateListOf<Pair<String, DownloadInfo>>() }
@@ -6887,6 +7025,15 @@ class UnifiedActivity :
             }
         }
 
+        // Re-sync the list whenever the cross-store DownloadCoordinator records change. This
+        // is what makes PAUSED records (loaded from DB after app restart) appear in the tab,
+        // and what removes COMPLETE/CANCELLED/FAILED rows after Clear.
+        LaunchedEffect(syncDownloads) {
+            com.winlator.cmod.app.service.download.DownloadCoordinator.changes.collect {
+                latestSyncDownloads()
+            }
+        }
+
         downloads.forEach { (_, info) ->
             LaunchedEffect(info) {
                 info.getStatusFlow().collect {
@@ -6908,11 +7055,9 @@ class UnifiedActivity :
             @Suppress("UNUSED_EXPRESSION")
             tick
 
-            // Global Actions row
-            val buttonHeight = 40.dp
             Row(
-                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
-                horizontalArrangement = Arrangement.Center,
+                modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 val selectedInfo = downloads.find { it.first == selectedId }?.second
@@ -6945,12 +7090,10 @@ class UnifiedActivity :
                     }
 
                 val cancelLabel =
-                    if (selectedId ==
-                        null
-                    ) {
-                        getString(R.string.downloads_queue_cancel_all)
+                    if (selectedId == null) {
+                        stringResource(R.string.downloads_queue_cancel_all)
                     } else {
-                        getString(R.string.common_ui_cancel)
+                        stringResource(R.string.common_ui_cancel)
                     }
 
                 // Disable pause/resume for completed or cancelled downloads
@@ -6968,61 +7111,11 @@ class UnifiedActivity :
                         pausableDownloads.isNotEmpty()
                     }
 
-                // Download Queue Size
-                var queueSize by remember { mutableIntStateOf(PrefManager.downloadQueueSize) }
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier =
-                        Modifier
-                            .height(buttonHeight)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(SurfaceDark)
-                            .padding(horizontal = 4.dp),
-                ) {
-                    IconButton(
-                        onClick = {
-                            if (queueSize > 1) {
-                                queueSize--
-                                PrefManager.downloadQueueSize = queueSize
-                            }
-                        },
-                        modifier = Modifier.size(24.dp),
-                    ) {
-                        Icon(
-                            Icons.AutoMirrored.Outlined.KeyboardArrowLeft,
-                            contentDescription = "Decrease Queue",
-                            tint = TextPrimary,
-                            modifier = Modifier.size(18.dp),
-                        )
-                    }
-                    Text(
-                        text = queueSize.toString(),
-                        style = MaterialTheme.typography.titleSmall,
-                        color = TextPrimary,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 2.dp),
-                    )
-                    IconButton(
-                        onClick = {
-                            queueSize++
-                            PrefManager.downloadQueueSize = queueSize
-                            com.winlator.cmod.feature.stores.steam.service.SteamService
-                                .checkQueue()
-                        },
-                        modifier = Modifier.size(24.dp),
-                    ) {
-                        Icon(
-                            Icons.AutoMirrored.Outlined.KeyboardArrowRight,
-                            contentDescription = "Increase Queue",
-                            tint = TextPrimary,
-                            modifier = Modifier.size(18.dp),
-                        )
-                    }
-                }
-
-                Spacer(Modifier.width(12.dp))
-
-                Button(
+                DownloadsQueueButton(
+                    label = pauseResumeLabel,
+                    icon = if (isPaused || allPausableDownloadsPaused) Icons.Outlined.PlayArrow else Icons.Outlined.Pause,
+                    accentColor = Accent,
+                    controllerBadge = if (isController) if (isPS) "L2" else "LT" else null,
                     onClick = {
                         if (selectedId == null) {
                             if (allPausableDownloadsPaused) {
@@ -7039,22 +7132,13 @@ class UnifiedActivity :
                         }
                     },
                     enabled = pauseResumeEnabled,
-                    modifier = Modifier.height(buttonHeight),
-                    colors = ButtonDefaults.buttonColors(containerColor = SurfaceDark),
-                    shape = RoundedCornerShape(8.dp),
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(pauseResumeLabel, color = TextPrimary, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        if (isController) {
-                            Spacer(Modifier.width(8.dp))
-                            ControllerBadge(if (isPS) "L2" else "LT")
-                        }
-                    }
-                }
+                )
 
-                Spacer(Modifier.width(12.dp))
-
-                Button(
+                DownloadsQueueButton(
+                    label = cancelLabel,
+                    icon = Icons.Outlined.Close,
+                    accentColor = DangerRed,
+                    controllerBadge = if (isController) if (isPS) "R2" else "RT" else null,
                     onClick = {
                         if (selectedId == null) {
                             DownloadService.cancelAll()
@@ -7065,45 +7149,24 @@ class UnifiedActivity :
                         }
                     },
                     enabled = cancelEnabled,
-                    modifier = Modifier.height(buttonHeight),
-                    colors = ButtonDefaults.buttonColors(containerColor = SurfaceDark),
-                    shape = RoundedCornerShape(8.dp),
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(cancelLabel, color = TextPrimary, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        if (isController) {
-                            Spacer(Modifier.width(8.dp))
-                            ControllerBadge(if (isPS) "R2" else "RT")
-                        }
-                    }
-                }
+                )
 
-                // Clear button - clears completed and cancelled downloads
+                // Clear button - clears completed, cancelled, and failed downloads
                 val hasCompletedOrCancelled =
                     downloads.any {
                         val s = it.second.getStatusFlow().value
-                        s == DownloadPhase.COMPLETE || s == DownloadPhase.CANCELLED
+                        s == DownloadPhase.COMPLETE || s == DownloadPhase.CANCELLED || s == DownloadPhase.FAILED
                     }
 
-                Spacer(Modifier.width(12.dp))
-
-                Button(
+                DownloadsQueueButton(
+                    label = stringResource(R.string.downloads_queue_clear),
+                    icon = Icons.Outlined.Delete,
+                    accentColor = TextSecondary,
                     onClick = {
                         DownloadService.clearCompletedDownloads()
                     },
                     enabled = hasCompletedOrCancelled,
-                    modifier = Modifier.height(buttonHeight),
-                    colors = ButtonDefaults.buttonColors(containerColor = SurfaceDark),
-                    shape = RoundedCornerShape(8.dp),
-                ) {
-                    Text(
-                        stringResource(R.string.downloads_queue_clear),
-                        color = TextPrimary,
-                        fontSize = 12.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
+                )
             }
 
             val listState = rememberLazyListState()
@@ -7137,14 +7200,195 @@ class UnifiedActivity :
                 }
             }
 
-            LazyColumn(state = listState, modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(downloads, key = { it.first }) { (id, info) ->
-                    DownloadItemDeck(id, info, isSelected = selectedId == id, onClick = {
-                        if (selectedId == id) onSelectDownload(null) else onSelectDownload(id)
-                    })
+            // Sort so the user always sees what's actually running first, then everything
+            // they can resume, then finished items, with cancelled at the very bottom.
+            // The list re-sorts on phase transitions because `tick` (incremented by the
+            // status flow collectors above) is read here, forcing recomposition.
+            @Suppress("UNUSED_EXPRESSION")
+            tick
+            val sortedDownloads =
+                downloads.sortedBy { (_, info) ->
+                    when (info.getStatusFlow().value) {
+                        // In-progress states grouped together at the top.
+                        DownloadPhase.DOWNLOADING,
+                        DownloadPhase.PREPARING,
+                        DownloadPhase.VERIFYING,
+                        DownloadPhase.PATCHING,
+                        DownloadPhase.APPLYING_DATA,
+                        DownloadPhase.FINALIZING,
+                        DownloadPhase.UNPACKING,
+                        DownloadPhase.UNKNOWN,
+                        -> 0
+                        DownloadPhase.PAUSED -> 1
+                        DownloadPhase.QUEUED -> 2
+                        DownloadPhase.COMPLETE -> 3
+                        DownloadPhase.FAILED -> 4
+                        DownloadPhase.CANCELLED -> 5
+                    }
                 }
-                if (downloads.isEmpty()) {
-                    item { EmptyStateMessage("No active downloads.") }
+
+            if (sortedDownloads.isEmpty()) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    EmptyStateMessage(stringResource(R.string.downloads_queue_empty))
+                }
+            } else {
+                LazyColumn(state = listState, modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(sortedDownloads, key = { it.first }) { (id, info) ->
+                        DownloadItemDeck(
+                            id,
+                            info,
+                            isSelected = selectedId == id,
+                            animationsActive = animationsActive,
+                            onClick = {
+                                if (selectedId == id) onSelectDownload(null) else onSelectDownload(id)
+                            },
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    @Composable
+    private fun DownloadsQueueButton(
+        label: String,
+        icon: ImageVector,
+        accentColor: Color,
+        enabled: Boolean,
+        modifier: Modifier = Modifier,
+        controllerBadge: String? = null,
+        onClick: () -> Unit,
+    ) {
+        val contentColor = if (enabled) accentColor else TextSecondary.copy(alpha = 0.48f)
+
+        Button(
+            onClick = onClick,
+            enabled = enabled,
+            modifier = modifier.height(40.dp).widthIn(min = 96.dp),
+            colors =
+                ButtonDefaults.buttonColors(
+                    containerColor = DownloadButtonBlack,
+                    contentColor = contentColor,
+                    disabledContainerColor = DownloadButtonBlack.copy(alpha = 0.18f),
+                    disabledContentColor = TextSecondary.copy(alpha = 0.48f),
+                ),
+            border = BorderStroke(1.dp, contentColor.copy(alpha = if (enabled) 0.55f else 0.24f)),
+            contentPadding = PaddingValues(horizontal = 8.dp),
+            shape = RoundedCornerShape(8.dp),
+        ) {
+            Icon(icon, contentDescription = null, modifier = Modifier.size(16.dp), tint = contentColor)
+            Spacer(Modifier.width(6.dp))
+            Text(
+                label,
+                color = contentColor,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (controllerBadge != null) {
+                Spacer(Modifier.width(6.dp))
+                ControllerBadge(controllerBadge)
+            }
+        }
+    }
+
+    @Composable
+    private fun AnimatedDownloadProgressFill(
+        modifier: Modifier,
+        widthPx: Float,
+    ) {
+        val infiniteTransition = rememberInfiniteTransition(label = "downloadProgressGradient")
+        val gradientOffset by infiniteTransition.animateFloat(
+            initialValue = -widthPx,
+            targetValue = 0f,
+                animationSpec =
+                    infiniteRepeatable(
+                    animation = tween(durationMillis = 5000, easing = LinearEasing),
+                    repeatMode = RepeatMode.Restart,
+                ),
+            label = "downloadProgressGradientOffset",
+        )
+
+        Box(
+            modifier.background(
+                Brush.horizontalGradient(
+                    colorStops = DownloadChaseGradientStops,
+                    startX = gradientOffset,
+                    endX = gradientOffset + (widthPx * 2f),
+                    tileMode = TileMode.Repeated,
+                ),
+            ),
+        )
+    }
+
+    @Composable
+    private fun DownloadChasingProgressBar(
+        progress: Float,
+        status: DownloadPhase,
+        animationsActive: Boolean,
+        modifier: Modifier = Modifier,
+    ) {
+        val clampedProgress = progress.coerceIn(0f, 1f)
+        val shouldUseActiveGradient =
+            when (status) {
+                DownloadPhase.DOWNLOADING,
+                DownloadPhase.QUEUED,
+                DownloadPhase.PREPARING,
+                DownloadPhase.VERIFYING,
+                DownloadPhase.PATCHING,
+                DownloadPhase.APPLYING_DATA,
+                DownloadPhase.FINALIZING,
+                DownloadPhase.UNPACKING,
+                -> true
+                else -> false
+            }
+        val shouldAnimate = shouldUseActiveGradient && animationsActive
+        val fillColor =
+            when (status) {
+                DownloadPhase.FAILED,
+                DownloadPhase.CANCELLED,
+                -> DangerRed
+                DownloadPhase.COMPLETE -> StatusOnline
+                DownloadPhase.PAUSED -> TextSecondary
+                else -> Accent
+            }
+
+        BoxWithConstraints(
+            modifier =
+                modifier
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.34f)),
+        ) {
+            val density = LocalDensity.current
+            val widthPx = with(density) { maxWidth.toPx().coerceAtLeast(1f) }
+
+            if (clampedProgress > 0f) {
+                val fillModifier =
+                    Modifier
+                        .fillMaxHeight()
+                        .fillMaxWidth(clampedProgress)
+                        .clip(RectangleShape)
+
+                if (shouldUseActiveGradient) {
+                    if (shouldAnimate) {
+                        AnimatedDownloadProgressFill(fillModifier, widthPx)
+                    } else {
+                        Box(
+                            fillModifier.background(
+                                Brush.horizontalGradient(
+                                    colorStops = DownloadChaseGradientStops,
+                                    endX = widthPx * 2f,
+                                    tileMode = TileMode.Repeated,
+                                ),
+                            ),
+                        )
+                    }
+                } else {
+                    Box(fillModifier.background(fillColor))
                 }
             }
         }
@@ -7155,6 +7399,7 @@ class UnifiedActivity :
         id: String,
         info: DownloadInfo,
         isSelected: Boolean,
+        animationsActive: Boolean,
         onClick: () -> Unit,
     ) {
         var progress by remember { mutableFloatStateOf(info.getProgress()) }
@@ -7167,6 +7412,8 @@ class UnifiedActivity :
         }
         val status by info.getStatusFlow().collectAsState()
         val statusMessage by info.getStatusMessageFlow().collectAsState()
+        var previousStatus by remember { mutableStateOf(status) }
+        var showCompletedProgressBar by remember { mutableStateOf(status != DownloadPhase.COMPLETE) }
         val isSteam = id.startsWith("STEAM_")
         val isEpic = id.startsWith("EPIC_")
         val isGog = id.startsWith("GOG_")
@@ -7185,7 +7432,25 @@ class UnifiedActivity :
         var gogGame by remember(gogId) { mutableStateOf<GOGGame?>(null) }
         val context = LocalContext.current
         var isFocused by remember { mutableStateOf(false) }
-        val borderColor = if (isFocused || isSelected) Accent.copy(alpha = 0.8f) else Color.Transparent
+        val clickInteractionSource = remember { MutableInteractionSource() }
+        val animatedProgress by animateFloatAsState(
+            targetValue = if (status == DownloadPhase.COMPLETE) 1f else progress.coerceIn(0f, 1f),
+            animationSpec = tween(durationMillis = 650, easing = FastOutSlowInEasing),
+            label = "downloadItemProgress",
+        )
+
+        LaunchedEffect(status) {
+            if (status == DownloadPhase.COMPLETE) {
+                if (previousStatus != DownloadPhase.COMPLETE) {
+                    showCompletedProgressBar = true
+                    delay(900)
+                }
+                showCompletedProgressBar = false
+            } else {
+                showCompletedProgressBar = true
+            }
+            previousStatus = status
+        }
 
         LaunchedEffect(appId, gogId, isSteam, isEpic, isGog) {
             withContext(Dispatchers.IO) {
@@ -7222,15 +7487,25 @@ class UnifiedActivity :
             }
 
         Surface(
-            color = if (isSelected) SurfaceDark else CardDark,
+            color = if (isSelected) DownloadCardSelectedBlack else DownloadCardBlack,
             shape = RoundedCornerShape(12.dp),
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .border(4.dp, borderColor, RoundedCornerShape(12.dp))
+                    .chasingBorder(
+                        isFocused = isFocused || isSelected,
+                        paused = chasingBordersPaused.value || !animationsActive,
+                        cornerRadius = 12.dp,
+                        borderWidth = 2.dp,
+                        animationDurationMs = 8000,
+                    )
                     .onFocusChanged { isFocused = it.isFocused }
                     .focusable()
-                    .clickable(onClick = onClick),
+                    .clickable(
+                        interactionSource = clickInteractionSource,
+                        indication = null,
+                        onClick = onClick,
+                    ),
         ) {
             Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                 AsyncImage(
@@ -7251,7 +7526,11 @@ class UnifiedActivity :
                     val currentFile by info.getCurrentFileNameFlow().collectAsState()
                     val (downloadedBytes, totalBytes) = info.getBytesProgress()
                     val speed = info.getCurrentDownloadSpeed() ?: 0L
-                    val percentage = (progress * 100).toInt()
+                    val percentage = (animatedProgress * 100).roundToInt()
+                    val showDownloadSpeed =
+                        status == DownloadPhase.DOWNLOADING &&
+                            progress < 1f &&
+                            speed > 0
 
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                         Text(
@@ -7273,7 +7552,7 @@ class UnifiedActivity :
                         )
 
                         Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
-                            if (status == DownloadPhase.DOWNLOADING && speed > 0) {
+                            if (showDownloadSpeed) {
                                 Text(
                                     text = "${StorageUtils.formatBinarySize(speed)}/s",
                                     style = MaterialTheme.typography.labelMedium,
@@ -7287,25 +7566,43 @@ class UnifiedActivity :
                     val statusText =
                         when (status) {
                             DownloadPhase.DOWNLOADING -> {
-                                val filePart = currentFile?.let { " [${it.take(10)}]" } ?: ""
-                                "Downloading...$filePart"
+                                currentFile?.let {
+                                    stringResource(R.string.downloads_queue_phase_downloading_file, it.take(10))
+                                } ?: stringResource(R.string.downloads_queue_phase_downloading)
                             }
 
                             DownloadPhase.PAUSED -> {
                                 stringResource(R.string.downloads_queue_phase_paused)
                             }
 
+                            DownloadPhase.QUEUED -> {
+                                stringResource(R.string.downloads_queue_phase_queued)
+                            }
+
                             DownloadPhase.PREPARING -> {
-                                "Preparing..."
+                                stringResource(R.string.downloads_queue_phase_preparing)
                             }
 
                             DownloadPhase.VERIFYING -> {
-                                val filePart = currentFile?.let { " [${it.take(10)}]" } ?: ""
-                                "Verifying...$filePart"
+                                currentFile?.let {
+                                    stringResource(R.string.downloads_queue_phase_verifying_file, it.take(10))
+                                } ?: stringResource(R.string.downloads_queue_phase_verifying)
                             }
 
                             DownloadPhase.PATCHING -> {
-                                "Patching..."
+                                stringResource(R.string.downloads_queue_phase_patching)
+                            }
+
+                            DownloadPhase.APPLYING_DATA -> {
+                                stringResource(R.string.downloads_queue_phase_applying_data)
+                            }
+
+                            DownloadPhase.FINALIZING -> {
+                                stringResource(R.string.downloads_queue_phase_finalizing)
+                            }
+
+                            DownloadPhase.UNPACKING -> {
+                                stringResource(R.string.downloads_queue_phase_unpacking)
                             }
 
                             DownloadPhase.COMPLETE -> {
@@ -7330,38 +7627,45 @@ class UnifiedActivity :
                             }
 
                             else -> {
-                                status.name.lowercase().replaceFirstChar { it.uppercase() }
+                                stringResource(R.string.downloads_queue_phase_unknown)
                             }
                         }
 
-                    Text(
-                        "Status: $statusText",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = TextSecondary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
-                        LinearProgressIndicator(
-                            progress = { progress },
-                            modifier = Modifier.weight(1f).height(8.dp).clip(CircleShape),
-                            color =
-                                when (status) {
-                                    DownloadPhase.FAILED -> Color(0xFFFF6B6B)
-                                    DownloadPhase.CANCELLED -> Color(0xFFFF6B6B)
-                                    DownloadPhase.COMPLETE -> Color(0xFF4CAF50)
-                                    else -> Accent
-                                },
-                            trackColor = Color.Black.copy(alpha = 0.3f),
-                        )
-                        Spacer(Modifier.width(8.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                         Text(
-                            text = "$percentage%",
-                            style = MaterialTheme.typography.labelMedium,
+                            stringResource(R.string.downloads_queue_status_label),
+                            style = MaterialTheme.typography.bodySmall,
                             color = TextPrimary,
-                            modifier = Modifier.width(40.dp),
+                            maxLines = 1,
                         )
+                        Text(
+                            statusText,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (status == DownloadPhase.COMPLETE) StatusOnline else TextPrimary,
+                            modifier = Modifier.weight(1f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+
+                    AnimatedVisibility(
+                        visible = status != DownloadPhase.COMPLETE || showCompletedProgressBar,
+                        exit = fadeOut(tween(180)) + shrinkVertically(tween(180)),
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                            DownloadChasingProgressBar(
+                                progress = if (status == DownloadPhase.COMPLETE) 1f else animatedProgress,
+                                status = status,
+                                animationsActive = animationsActive,
+                                modifier = Modifier.weight(1f).height(9.dp).padding(end = 10.dp),
+                            )
+                            Text(
+                                text = "$percentage%",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = if (status == DownloadPhase.COMPLETE) StatusOnline else TextPrimary,
+                                modifier = Modifier.width(40.dp),
+                            )
+                        }
                     }
                 }
 
@@ -7371,7 +7675,7 @@ class UnifiedActivity :
                 ) {
                     Icon(
                         Icons.Outlined.Close,
-                        contentDescription = "Cancel Download",
+                        contentDescription = stringResource(R.string.downloads_queue_cancel_download),
                         tint =
                             if (status != DownloadPhase.COMPLETE &&
                                 status != DownloadPhase.CANCELLED
@@ -7406,7 +7710,10 @@ class UnifiedActivity :
                 title = { Text(stringResource(R.string.downloads_queue_cancel_download), color = TextPrimary) },
                 text = {
                     Text(
-                        "Cancel the download for ${gameName ?: "this game"} and delete all downloaded files?",
+                        stringResource(
+                            R.string.downloads_queue_cancel_download_confirm,
+                            gameName ?: stringResource(R.string.downloads_queue_this_game),
+                        ),
                         color = TextSecondary,
                     )
                 },
@@ -7450,17 +7757,16 @@ class UnifiedActivity :
         var showDlcDialog by remember { mutableStateOf(false) }
         val scope = rememberCoroutineScope()
 
-        val folderPickerLauncher =
-            rememberLauncherForActivityResult(
-                contract = ActivityResultContracts.OpenDocumentTree(),
-            ) { uri -> uri?.let { customPath = getPathFromTreeUri(it) } }
-
         if (showCustomPathWarning) {
             CustomPathWarningDialog(
                 onDismiss = { showCustomPathWarning = false },
                 onProceed = {
                     showCustomPathWarning = false
-                    folderPickerLauncher.launch(null)
+                    DirectoryPickerDialog.show(
+                        activity = this@UnifiedActivity,
+                        initialPath = customPath ?: SteamService.defaultAppInstallPath,
+                        title = getString(R.string.settings_content_install_directory),
+                    ) { path -> customPath = path }
                 },
             )
         }
@@ -7625,7 +7931,11 @@ class UnifiedActivity :
                         if (customPath == null && defaultPathSet) {
                             showCustomPathWarning = true
                         } else {
-                            folderPickerLauncher.launch(null)
+                            DirectoryPickerDialog.show(
+                                activity = this@UnifiedActivity,
+                                initialPath = customPath ?: SteamService.defaultAppInstallPath,
+                                title = getString(R.string.settings_content_install_directory),
+                            ) { path -> customPath = path }
                         }
                     },
                 )
@@ -7640,29 +7950,6 @@ class UnifiedActivity :
             }
         }
     }
-
-    private fun getPathFromTreeUri(uri: Uri): String? =
-        try {
-            val docId = DocumentsContract.getTreeDocumentId(uri)
-            if (docId.startsWith("primary:")) {
-                val path = docId.substringAfter(":")
-                val externalStorage = android.os.Environment.getExternalStorageDirectory()
-                if (path.isEmpty()) externalStorage.path else "${externalStorage.path}/$path"
-            } else if (docId.contains(":")) {
-                val parts = docId.split(":", limit = 2)
-                if (parts.size == 2) {
-                    val volumeId = parts[0]
-                    val path = parts[1]
-                    if (path.isEmpty()) "/storage/$volumeId" else "/storage/$volumeId/$path"
-                } else {
-                    null
-                }
-            } else {
-                docId
-            }
-        } catch (e: Exception) {
-            uri.path
-        }
 
     private fun findLibraryShortcutForGame(
         containerManager: ContainerManager,
@@ -8448,6 +8735,7 @@ class UnifiedActivity :
                 putExtra("shortcut_name", shortcut.name)
                 putExtra("shortcut_uuid", shortcutId)
                 putExtra("shortcut_path_hash", shortcutPathHash)
+                putExtra(XServerDisplayActivity.EXTRA_LAUNCHED_FROM_PINNED_SHORTCUT, true)
             }
 
         val customIconPath =
@@ -8566,7 +8854,7 @@ class UnifiedActivity :
                 containerManager.loadShortcuts().find {
                     it.getExtra("game_source") == "STEAM" && it.getExtra("app_id") == app.id.toString()
                 }
-            val launchExecutable = SteamService.getInstalledExe(app.id)
+            val detectedLaunchExecutable = SteamService.getInstalledExe(app.id)
 
             if (shortcut != null) {
                 if (!SetupWizardActivity.isContainerUsable(context, shortcut.container)) {
@@ -8578,10 +8866,13 @@ class UnifiedActivity :
                     }
                     return@launch
                 }
-                ensureGameDrive(shortcut.container, gameInstallPath)
+                normalizeContainerDrives(shortcut.container)
                 shortcut.putExtra("game_source", "STEAM")
                 shortcut.putExtra("game_install_path", gameInstallPath)
-                shortcut.putExtra("launch_exe_path", launchExecutable)
+                val existingLaunchExecutable = shortcut.getExtra("launch_exe_path")
+                if (existingLaunchExecutable.isNullOrBlank() && detectedLaunchExecutable.isNotBlank()) {
+                    shortcut.putExtra("launch_exe_path", detectedLaunchExecutable)
+                }
                 val loaderExec = "wine \"C:\\\\Program Files (x86)\\\\Steam\\\\steamclient_loader_x64.exe\""
                 val lines =
                     com.winlator.cmod.shared.io.FileUtils
@@ -8619,7 +8910,7 @@ class UnifiedActivity :
                     return@launch
                 }
 
-                ensureGameDrive(container, gameInstallPath)
+                normalizeContainerDrives(container)
 
                 val execPath = "wine \"C:\\\\Program Files (x86)\\\\Steam\\\\steamclient_loader_x64.exe\""
 
@@ -8638,7 +8929,7 @@ class UnifiedActivity :
                 content.append("app_id=${app.id}\n")
                 content.append("container_id=${container.id}\n")
                 content.append("game_install_path=${gameInstallPath}\n")
-                content.append("launch_exe_path=${launchExecutable}\n")
+                content.append("launch_exe_path=${detectedLaunchExecutable}\n")
                 content.append("use_container_defaults=1\n")
 
                 com.winlator.cmod.shared.io.FileUtils
@@ -8698,7 +8989,7 @@ class UnifiedActivity :
                 val shortcut = existingShortcut
                 // Ensure game_install_path is always up-to-date
                 shortcut.putExtra("game_install_path", gameInstallPath)
-                ensureGameDrive(shortcut.container, gameInstallPath)
+                normalizeContainerDrives(shortcut.container)
 
                 // Repair broken Exec line if the executable is missing or still points at a legacy placeholder mapping.
                 val currentPath = shortcut.path
@@ -8706,21 +8997,30 @@ class UnifiedActivity :
                     currentPath == "A:\\" || currentPath == "A:\\\\" ||
                     currentPath.startsWith("A:\\")
                 ) {
-                    val exePath = EpicService.getInstalledExe(app.id)
                     val newExecCmd =
-                        if (exePath.isNotEmpty()) {
-                            buildStoreWineExecCommand(
-                                shortcut.container,
-                                "EPIC",
-                                gameInstallPath,
-                                java.io.File(gameInstallPath, exePath.replace("\\", "/")),
-                            )
-                        } else {
-                            val exeFile = findGameExe(gameDir)
-                            if (exeFile != null) {
-                                buildStoreWineExecCommand(shortcut.container, "EPIC", gameInstallPath, exeFile)
+                        buildStoreWineExecCommandForSelectedExe(
+                            shortcut.container,
+                            "EPIC",
+                            gameInstallPath,
+                            shortcut.getExtra("launch_exe_path"),
+                        ) ?: run {
+                            val exePath = EpicService.getInstalledExe(app.id)
+                            if (exePath.isNotEmpty()) {
+                                shortcut.putExtra("launch_exe_path", exePath)
+                                buildStoreWineExecCommand(
+                                    shortcut.container,
+                                    "EPIC",
+                                    gameInstallPath,
+                                    java.io.File(gameInstallPath, exePath.replace("\\", "/")),
+                                )
                             } else {
-                                null
+                                val exeFile = findGameExe(gameDir)
+                                if (exeFile != null) {
+                                    shortcut.putExtra("launch_exe_path", exeFile.absolutePath)
+                                    buildStoreWineExecCommand(shortcut.container, "EPIC", gameInstallPath, exeFile)
+                                } else {
+                                    null
+                                }
                             }
                         }
                     if (newExecCmd != null) {
@@ -8762,7 +9062,7 @@ class UnifiedActivity :
                     return@launch
                 }
 
-                ensureGameDrive(container, gameInstallPath)
+                normalizeContainerDrives(container)
                 val execCmd =
                     if (exePath.isNotEmpty()) {
                         buildStoreWineExecCommand(
@@ -8794,6 +9094,9 @@ class UnifiedActivity :
                 content.append("app_id=${app.id}\n")
                 content.append("container_id=${container.id}\n")
                 content.append("game_install_path=${gameInstallPath}\n")
+                if (exePath.isNotEmpty()) {
+                    content.append("launch_exe_path=${exePath}\n")
+                }
                 content.append("use_container_defaults=1\n")
 
                 com.winlator.cmod.shared.io.FileUtils
@@ -8852,7 +9155,7 @@ class UnifiedActivity :
                     return@launch
                 }
                 shortcut.putExtra("game_install_path", gameInstallPath)
-                ensureGameDrive(shortcut.container, gameInstallPath)
+                normalizeContainerDrives(shortcut.container)
 
                 // Repair broken Exec line if the executable is missing or still points at a legacy placeholder mapping.
                 val currentPath = shortcut.path
@@ -8861,29 +9164,17 @@ class UnifiedActivity :
                     currentPath.startsWith("A:\\")
                 ) {
                     val newExecCmd =
-                        if (shortcut.getExtra("launch_exe_path").isNotEmpty()) {
-                            val selectedExe = java.io.File(shortcut.getExtra("launch_exe_path"))
-                            if (selectedExe.exists()) {
-                                val normalizedBaseDir =
-                                    java.io
-                                        .File(gameInstallPath)
-                                        .absolutePath
-                                        .removeSuffix("/")
-                                val normalizedExePath = selectedExe.absolutePath
-                                if (normalizedExePath == normalizedBaseDir || normalizedExePath.startsWith("$normalizedBaseDir/")) {
-                                    buildStoreWineExecCommand(shortcut.container, "GOG", gameInstallPath, selectedExe)
-                                } else {
-                                    val hostPath = normalizedExePath.replace("/", "\\\\").let { if (it.startsWith("\\")) it else "\\$it" }
-                                    "wine \"Z:${hostPath}\""
-                                }
-                            } else {
-                                null
-                            }
-                        } else {
+                        buildStoreWineExecCommandForSelectedExe(
+                            shortcut.container,
+                            "GOG",
+                            gameInstallPath,
+                            shortcut.getExtra("launch_exe_path"),
+                        ) ?: run {
                             val libraryItem =
                                 LibraryItem("GOG_${app.id}", app.title, com.winlator.cmod.feature.stores.steam.enums.GameSource.GOG)
                             val exePath = GOGService.getInstalledExe(libraryItem)
                             if (exePath.isNotEmpty()) {
+                                shortcut.putExtra("launch_exe_path", exePath)
                                 buildStoreWineExecCommand(
                                     shortcut.container,
                                     "GOG",
@@ -8893,6 +9184,7 @@ class UnifiedActivity :
                             } else {
                                 val exeFile = findGameExe(gameDir)
                                 if (exeFile != null) {
+                                    shortcut.putExtra("launch_exe_path", exeFile.absolutePath)
                                     buildStoreWineExecCommand(shortcut.container, "GOG", gameInstallPath, exeFile)
                                 } else {
                                     null
@@ -8940,7 +9232,7 @@ class UnifiedActivity :
                 return@launch
             }
 
-            ensureGameDrive(container, gameInstallPath)
+            normalizeContainerDrives(container)
             val execCmd =
                 if (exePath.isNotEmpty()) {
                     buildStoreWineExecCommand(
@@ -8970,10 +9262,13 @@ class UnifiedActivity :
             content.append("\n[Extra Data]\n")
             content.append("game_source=GOG\n")
             content.append("gog_id=${app.id}\n")
-            content.append("app_id=${gogPseudoId(app.id)}\n")
-            content.append("container_id=${container.id}\n")
-            content.append("game_install_path=${gameInstallPath}\n")
-            content.append("use_container_defaults=1\n")
+                content.append("app_id=${gogPseudoId(app.id)}\n")
+                content.append("container_id=${container.id}\n")
+                content.append("game_install_path=${gameInstallPath}\n")
+                if (exePath.isNotEmpty()) {
+                    content.append("launch_exe_path=${exePath}\n")
+                }
+                content.append("use_container_defaults=1\n")
 
             com.winlator.cmod.shared.io.FileUtils
                 .writeString(shortcutFile, content.toString())
@@ -8989,11 +9284,7 @@ class UnifiedActivity :
         }
     }
 
-    private fun ensureGameDrive(
-        container: com.winlator.cmod.runtime.container.Container,
-        gamePath: String,
-        preferredLetter: String = "F",
-    ) {
+    private fun normalizeContainerDrives(container: com.winlator.cmod.runtime.container.Container) {
         container.drives =
             com.winlator.cmod.runtime.wine.WineUtils.normalizePersistentDrives(
                 this,
@@ -9018,15 +9309,15 @@ class UnifiedActivity :
         val windowsPath =
             container?.let {
                 com.winlator.cmod.runtime.wine.WineUtils
+                    .getDriveCGameWindowsPath(
+                        it,
+                        "CUSTOM",
+                        gameInstallPath,
+                        exeFile.absolutePath,
+                    ) ?: com.winlator.cmod.runtime.wine.WineUtils
                     .getWindowsPath(it, exeFile.absolutePath)
             } ?: run {
-                val relativePath =
-                    try {
-                        exeFile.relativeTo(java.io.File(gameInstallPath)).path.replace("/", "\\")
-                    } catch (_: Exception) {
-                        exeFile.name
-                    }
-                "F:\\$relativePath"
+                com.winlator.cmod.runtime.wine.WineUtils.getDosPath(exeFile.absolutePath)
             }
         return "wine \"$windowsPath\""
     }
@@ -9052,9 +9343,36 @@ class UnifiedActivity :
                     } catch (_: Exception) {
                         exeFile.name
                     }
-                "C:\\WinNative\\Games\\$source\\${java.io.File(gameInstallPath).name}\\$relativePath"
-            }
+                val linkName =
+                    com.winlator.cmod.runtime.wine.WineUtils.getDriveCGameLinkName(gameInstallPath)
+                "C:\\WinNative\\Games\\$source\\$linkName\\$relativePath"
+        }
         return "wine \"$windowsPath\""
+    }
+
+    private fun buildStoreWineExecCommandForSelectedExe(
+        container: com.winlator.cmod.runtime.container.Container?,
+        source: String,
+        gameInstallPath: String,
+        selectedExePath: String?,
+    ): String? {
+        if (selectedExePath.isNullOrBlank()) return null
+
+        val selectedExe = java.io.File(selectedExePath)
+        if (!selectedExe.isFile) return null
+
+        val normalizedBaseDir =
+            java.io
+                .File(gameInstallPath)
+                .absolutePath
+                .removeSuffix("/")
+        val normalizedExePath = selectedExe.absolutePath
+        return if (normalizedExePath == normalizedBaseDir || normalizedExePath.startsWith("$normalizedBaseDir/")) {
+            buildStoreWineExecCommand(container, source, gameInstallPath, selectedExe)
+        } else {
+            val hostPath = normalizedExePath.replace("/", "\\\\").let { if (it.startsWith("\\")) it else "\\$it" }
+            "wine \"Z:${hostPath}\""
+        }
     }
 
     // Launch custom game by shortcut name
@@ -9104,10 +9422,10 @@ class UnifiedActivity :
                 shortcut.saveData()
             }
 
-            // Ensure the custom game folder is mapped into the container.
+            // Refresh storage-root mappings; custom game paths launch through the drive_c game symlink.
             val gameFolder = shortcut.getExtra("custom_game_folder", "")
             if (gameFolder.isNotEmpty()) {
-                ensureGameDrive(shortcut.container, gameFolder, "F")
+                normalizeContainerDrives(shortcut.container)
                 shortcut.container.saveData()
             }
             val intent = Intent(context, XServerDisplayActivity::class.java)
@@ -9124,6 +9442,7 @@ class UnifiedActivity :
         context: android.content.Context,
         intent: Intent,
     ) {
+        DownloadService.clearCompletedDownloads()
         context.startActivity(intent)
         // Suppress the default activity transition so the preloader stays seamless
         if (context is android.app.Activity) {
@@ -9281,6 +9600,8 @@ class UnifiedActivity :
         contentFilters: SnapshotStateMap<String, Boolean>,
         libraryLayoutMode: LibraryLayoutMode,
         onLibraryLayoutSelected: (LibraryLayoutMode) -> Unit,
+        onStoreVisibleChanged: (String, Boolean) -> Unit,
+        onContentFiltersChanged: (String, Boolean) -> Unit,
         onClose: () -> Unit,
     ) {
         val currentState = persona?.state ?: EPersonaState.Online
@@ -9514,12 +9835,12 @@ class UnifiedActivity :
                 Spacer(Modifier.height(8.dp))
 
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    DrawerFilterButton("Steam", storeVisible["steam"] == true, Modifier.weight(1f)) { storeVisible["steam"] = it }
-                    DrawerFilterButton("Epic", storeVisible["epic"] == true, Modifier.weight(1f)) { storeVisible["epic"] = it }
+                    DrawerFilterButton("Steam", storeVisible["steam"] == true, Modifier.weight(1f)) { onStoreVisibleChanged("steam", it) }
+                    DrawerFilterButton("Epic", storeVisible["epic"] == true, Modifier.weight(1f)) { onStoreVisibleChanged("epic", it) }
                 }
                 Spacer(Modifier.height(8.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    DrawerFilterButton("GOG", storeVisible["gog"] == true, Modifier.weight(1f)) { storeVisible["gog"] = it }
+                    DrawerFilterButton("GOG", storeVisible["gog"] == true, Modifier.weight(1f)) { onStoreVisibleChanged("gog", it) }
                     Spacer(Modifier.weight(1f))
                 }
 
@@ -9537,16 +9858,13 @@ class UnifiedActivity :
                 Spacer(Modifier.height(8.dp))
 
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    DrawerFilterButton("Games", contentFilters["games"] == true, Modifier.weight(1f)) { contentFilters["games"] = it }
-                    DrawerFilterButton("DLC", contentFilters["dlc"] == true, Modifier.weight(1f)) { contentFilters["dlc"] = it }
+                    DrawerFilterButton("Games", contentFilters["games"] == true, Modifier.weight(1f)) { onContentFiltersChanged("games", it) }
+                    DrawerFilterButton("DLC", contentFilters["dlc"] == true, Modifier.weight(1f)) { onContentFiltersChanged("dlc", it) }
                 }
                 Spacer(Modifier.height(8.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    DrawerFilterButton("Applications", contentFilters["applications"] == true, Modifier.weight(1f)) {
-                        contentFilters["applications"] =
-                            it
-                    }
-                    DrawerFilterButton("Tools", contentFilters["tools"] == true, Modifier.weight(1f)) { contentFilters["tools"] = it }
+                    DrawerFilterButton("Applications", contentFilters["applications"] == true, Modifier.weight(1f)) { onContentFiltersChanged("applications", it) }
+                    DrawerFilterButton("Tools", contentFilters["tools"] == true, Modifier.weight(1f)) { onContentFiltersChanged("tools", it) }
                 }
             }
         }
@@ -9609,41 +9927,6 @@ class UnifiedActivity :
         }
     }
 
-    // Smart game folder detection
-    private fun detectGameFolder(exePath: String): String {
-        val exeFile = java.io.File(exePath)
-        // Directories that are typically sub-folders inside a game, not the root
-        val subDirNames =
-            setOf(
-                "bin",
-                "binaries",
-                "x64",
-                "x86",
-                "win64",
-                "win32",
-                "bin64",
-                "bin32",
-                "game",
-                "build",
-                "release",
-                "shipping",
-                "debug",
-                "retail",
-                "dist",
-            )
-        var dir = exeFile.parentFile ?: return exePath
-        // Walk up while the current dir name looks like a sub-directory
-        while (dir.parentFile != null) {
-            val name = dir.name.lowercase()
-            if (name in subDirNames) {
-                dir = dir.parentFile!!
-            } else {
-                break
-            }
-        }
-        return dir.absolutePath
-    }
-
     // Add Custom Game Dialog
     @Composable
     private fun AddCustomGameDialog(onDismiss: () -> Unit) {
@@ -9654,69 +9937,28 @@ class UnifiedActivity :
         var gameFolder by remember { mutableStateOf<String?>(null) }
         var isAdding by remember { mutableStateOf(false) }
 
-        val exePickerLauncher =
-            rememberLauncherForActivityResult(
-                contract = ActivityResultContracts.OpenDocument(),
-            ) { uri ->
-                if (uri != null) {
-                    // Resolve to a real file path
-                    var path = getPathFromContentUri(context, uri)
-                    // If path resolution didn't yield an .exe, check the URI display name
-                    val isExe = path != null && path.lowercase().endsWith(".exe")
-                    if (!isExe && path != null) {
-                        // Try getting the display name from ContentResolver as fallback
-                        val displayName =
-                            try {
-                                context.contentResolver
-                                    .query(
-                                        uri,
-                                        arrayOf(android.provider.OpenableColumns.DISPLAY_NAME),
-                                        null,
-                                        null,
-                                        null,
-                                    )?.use { cursor ->
-                                        if (cursor.moveToFirst()) cursor.getString(0) else null
-                                    }
-                            } catch (_: Exception) {
-                                null
-                            }
-                        if (displayName != null && displayName.lowercase().endsWith(".exe")) {
-                            // Path is valid but extension was lost in resolution; append or recombine
-                            if (!path.lowercase().endsWith(".exe")) {
-                                val parent = java.io.File(path).let { if (it.isDirectory) it else it.parentFile }
-                                if (parent != null) {
-                                    val reconstructed = java.io.File(parent, displayName)
-                                    if (reconstructed.exists()) path = reconstructed.absolutePath
-                                }
-                            }
-                        }
-                    }
-                    if (path != null && (path.lowercase().endsWith(".exe") || java.io.File(path).exists())) {
-                        selectedExePath = path
-                        gameFolder = detectGameFolder(path)
-                        // Auto-generate a game name from the folder name
-                        if (gameName.isBlank()) {
-                            gameName =
-                                java.io
-                                    .File(gameFolder!!)
-                                    .name
-                                    .replace("_", " ")
-                                    .replace("-", " ")
-                        }
-                    } else {
-                        com.winlator.cmod.shared.android.AppUtils.showToast(
-                            context,
-                            "Please select a .exe file",
-                            android.widget.Toast.LENGTH_SHORT,
-                        )
-                    }
-                }
+        fun selectExecutable(path: String) {
+            if (!path.endsWith(".exe", ignoreCase = true) || !java.io.File(path).isFile) {
+                com.winlator.cmod.shared.android.AppUtils.showToast(
+                    context,
+                    R.string.common_ui_select_valid_exe_file,
+                    android.widget.Toast.LENGTH_SHORT,
+                )
+                return
             }
 
-        val folderPickerLauncher =
-            rememberLauncherForActivityResult(
-                contract = ActivityResultContracts.OpenDocumentTree(),
-            ) { uri -> uri?.let { gameFolder = getPathFromTreeUri(it) } }
+            selectedExePath = path
+            gameFolder = LibraryShortcutUtils.detectCustomGameFolder(path)
+            // Auto-generate a game name from the EXE name (without extension)
+            if (gameName.isBlank()) {
+                gameName =
+                    java.io
+                        .File(path)
+                        .nameWithoutExtension
+                        .replace("_", " ")
+                        .replace("-", " ")
+            }
+        }
 
         val defaultDensity = LocalDensity.current
         Dialog(
@@ -9760,14 +10002,14 @@ class UnifiedActivity :
                                         .clip(RoundedCornerShape(12.dp))
                                         .background(Color.White.copy(alpha = 0.05f))
                                         .clickable {
-                                            if (!ensureAllFilesAccessForImports(context)) return@clickable
-                                            exePickerLauncher.launch(
-                                                arrayOf(
-                                                    "application/octet-stream",
-                                                    "application/x-msdos-program",
-                                                    "application/x-msdownload",
-                                                    "*/*",
-                                                ),
+                                            DirectoryPickerDialog.showFile(
+                                                activity = this@UnifiedActivity,
+                                                initialPath = selectedExePath ?: gameFolder,
+                                                title = getString(R.string.common_ui_select_exe),
+                                                allowedExtensions = setOf("exe"),
+                                                dimAmount = 0.5f,
+                                                preserveBackdropBlur = true,
+                                                onSelected = ::selectExecutable,
                                             )
                                         }.padding(horizontal = 12.dp, vertical = 10.dp),
                                 verticalAlignment = Alignment.CenterVertically,
@@ -9836,9 +10078,13 @@ class UnifiedActivity :
                                     )
                                     Spacer(Modifier.width(6.dp))
                                     Column(Modifier.weight(1f)) {
-                                        Text("Game Folder (Mapped Game Drive)", color = TextSecondary, fontSize = 9.sp)
                                         Text(
-                                            gameFolder ?: "Auto-detected",
+                                            stringResource(R.string.library_games_game_folder_mapped_drive),
+                                            color = TextSecondary,
+                                            fontSize = 9.sp,
+                                        )
+                                        Text(
+                                            gameFolder ?: stringResource(R.string.common_ui_auto_detected),
                                             color = if (gameFolder != null) TextPrimary else TextSecondary,
                                             fontSize = 10.sp,
                                             maxLines = 1,
@@ -9847,11 +10093,17 @@ class UnifiedActivity :
                                     }
                                     IconButton(onClick = {
                                         if (!ensureAllFilesAccessForImports(context)) return@IconButton
-                                        folderPickerLauncher.launch(null)
+                                        DirectoryPickerDialog.show(
+                                            activity = this@UnifiedActivity,
+                                            initialPath = gameFolder,
+                                            title = getString(R.string.common_ui_select_folder),
+                                            dimAmount = 0.5f,
+                                            preserveBackdropBlur = true,
+                                        ) { path -> gameFolder = path }
                                     }, modifier = Modifier.size(28.dp)) {
                                         Icon(
                                             Icons.Outlined.Edit,
-                                            contentDescription = "Change",
+                                            contentDescription = stringResource(R.string.common_ui_change),
                                             tint = Accent,
                                             modifier = Modifier.size(14.dp),
                                         )
@@ -9927,97 +10179,6 @@ class UnifiedActivity :
         }
     }
 
-    // Resolve content URI to real file path
-    private fun getPathFromContentUri(
-        context: android.content.Context,
-        uri: Uri,
-    ): String? {
-        val displayName =
-            try {
-                context.contentResolver
-                    .query(
-                        uri,
-                        arrayOf(android.provider.OpenableColumns.DISPLAY_NAME),
-                        null,
-                        null,
-                        null,
-                    )?.use { cursor ->
-                        if (cursor.moveToFirst()) cursor.getString(0) else null
-                    }
-            } catch (_: Exception) {
-                null
-            }
-
-        // Try DocumentsContract first
-        try {
-            if (DocumentsContract.isDocumentUri(context, uri)) {
-                val docId = DocumentsContract.getDocumentId(uri)
-                // raw: prefix contains the actual filesystem path directly
-                if (docId.startsWith("raw:")) {
-                    return docId.substringAfter("raw:")
-                }
-                if (docId.startsWith("primary:")) {
-                    return "${android.os.Environment.getExternalStorageDirectory().path}/${docId.substringAfter(":")}"
-                }
-                // Downloads provider on some Android versions uses "msf:NNN"
-                if (docId.startsWith("msf:") || docId.all { it.isDigit() }) {
-                    val resolved = queryContentResolverForPath(context, uri)
-                    if (resolved != null) return resolved
-                    if (displayName != null) {
-                        val downloadsFile =
-                            java.io.File(
-                                android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS),
-                                displayName,
-                            )
-                        if (downloadsFile.exists()) return downloadsFile.absolutePath
-                    }
-                }
-                if (docId.contains(":")) {
-                    val parts = docId.split(":", limit = 2)
-                    if (parts.size == 2 && parts[1].isNotEmpty()) {
-                        return "/storage/${parts[0]}/${parts[1]}"
-                    }
-                }
-            }
-        } catch (_: Exception) {
-        }
-
-        // Try querying ContentResolver for _data column (works for many providers)
-        try {
-            val resolved = queryContentResolverForPath(context, uri)
-            if (resolved != null) return resolved
-        } catch (_: Exception) {
-        }
-
-        // Fallback: uri.path — strip common prefixes
-        val rawPath = uri.path
-        if (rawPath != null) {
-            // Handle /document/raw:/actual/path format
-            val rawPrefix = "/document/raw:"
-            if (rawPath.startsWith(rawPrefix)) {
-                return rawPath.substringAfter(rawPrefix)
-            }
-            // Handle /document/primary:path format
-            val primaryPrefix = "/document/primary:"
-            if (rawPath.startsWith(primaryPrefix)) {
-                return "${android.os.Environment.getExternalStorageDirectory().path}/${rawPath.substringAfter(primaryPrefix)}"
-            }
-            // If the path looks like a real file path, return it
-            if (rawPath.startsWith("/storage/") || rawPath.startsWith("/data/")) {
-                return rawPath
-            }
-        }
-        if (displayName != null) {
-            val downloadsFile =
-                java.io.File(
-                    android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS),
-                    displayName,
-                )
-            if (downloadsFile.exists()) return downloadsFile.absolutePath
-        }
-        return rawPath
-    }
-
     private fun ensureAllFilesAccessForImports(context: android.content.Context): Boolean {
         if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.R || android.os.Environment.isExternalStorageManager()) {
             return true
@@ -10037,24 +10198,6 @@ class UnifiedActivity :
         return false
     }
 
-    // Query ContentResolver for the actual file path via _data column
-    private fun queryContentResolverForPath(
-        context: android.content.Context,
-        uri: Uri,
-    ): String? =
-        try {
-            context.contentResolver.query(uri, arrayOf(android.provider.MediaStore.MediaColumns.DATA), null, null, null)?.use { cursor ->
-                if (cursor.moveToFirst()) {
-                    val idx = cursor.getColumnIndex(android.provider.MediaStore.MediaColumns.DATA)
-                    if (idx >= 0) cursor.getString(idx) else null
-                } else {
-                    null
-                }
-            }
-        } catch (_: Exception) {
-            null
-        }
-
     // Create custom game shortcut + container
     private fun addCustomGame(
         context: android.content.Context,
@@ -10070,12 +10213,7 @@ class UnifiedActivity :
         }
 
         val exeFile = java.io.File(exePath)
-        ensureGameDrive(
-            container,
-            gameFolderPath,
-            com.winlator.cmod.runtime.wine.WineUtils
-                .getPreferredGameDriveLetter(gameFolderPath),
-        )
+        normalizeContainerDrives(container)
         val execCmd = buildWineExecCommand(container, gameFolderPath, exeFile)
 
         // Write .desktop shortcut

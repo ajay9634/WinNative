@@ -21,10 +21,14 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.json.JSONException;
 import org.json.JSONObject;
 
 public class ContainerManager {
+  private static final AtomicBoolean shortcutUpgradeRunning = new AtomicBoolean(false);
+  private static final AtomicBoolean shortcutUpgradeAttempted = new AtomicBoolean(false);
+
   private final ArrayList<Container> containers = new ArrayList<>();
   private int maxContainerId = 0;
   private final File homeDir;
@@ -324,7 +328,6 @@ public class ContainerManager {
     dstContainer.setAudioDriver(srcContainer.getAudioDriver());
     dstContainer.setWinComponents(srcContainer.getWinComponents());
     dstContainer.setDrives(srcContainer.getDrives());
-    dstContainer.setShowFPS(srcContainer.isShowFPS());
     dstContainer.setStartupSelection(srcContainer.getStartupSelection());
     dstContainer.setBox64Preset(srcContainer.getBox64Preset());
     dstContainer.setDesktopTheme(srcContainer.getDesktopTheme());
@@ -353,16 +356,56 @@ public class ContainerManager {
             File desktopFile =
                 new File(filePath.substring(0, filePath.lastIndexOf(".")) + ".desktop");
             if (!desktopFile.exists()) {
-              MSLink.createDesktopFile(file, context);
+              MSLink.createDesktopFile(file, context, container);
               shortcuts.add(new Shortcut(container, desktopFile));
             }
-          } else if (fileName.endsWith(".desktop")) shortcuts.add(new Shortcut(container, file));
+          } else if (fileName.endsWith(".desktop")) {
+            shortcuts.add(new Shortcut(container, file));
+          }
         }
       }
     }
 
     shortcuts.sort(Comparator.comparing(a -> a.name));
     return shortcuts;
+  }
+
+  public void upgradeShortcuts(final Runnable onDone) {
+    if (!shortcutUpgradeRunning.compareAndSet(false, true)) return;
+
+    new Thread(() -> {
+        try {
+            boolean changed = false;
+            for (Container container : getContainers()) {
+                File desktopDir = container.getDesktopDir();
+                if (!desktopDir.exists()) continue;
+                File[] files = desktopDir.listFiles();
+                if (files == null) continue;
+                for (File file : files) {
+                    if (file.getName().endsWith(".lnk")) {
+                        File desktopFile = new File(file.getPath().substring(0, file.getPath().lastIndexOf(".")) + ".desktop");
+                        boolean needsUpgrade = true;
+                        if (desktopFile.exists()) {
+                            String content = FileUtils.readString(desktopFile);
+                            if (content != null && content.contains("game_source=CUSTOM")) {
+                                needsUpgrade = false;
+                            }
+                        }
+                        if (needsUpgrade) {
+                            if (MSLink.createDesktopFile(file, context, container)) {
+                                changed = true;
+                            }
+                        }
+                    }
+                }
+            }
+            if (changed && onDone != null) {
+                new Handler(Looper.getMainLooper()).post(onDone);
+            }
+        } finally {
+            shortcutUpgradeRunning.set(false);
+        }
+    }, "ShortcutUpgrade").start();
   }
 
   public int getNextContainerId() {
@@ -466,15 +509,24 @@ public class ContainerManager {
     // Step 1: Try to extract the versioned container pattern from bundled assets
     // e.g. "proton-9.0-x86_64_container_pattern.tzst"
     String containerPattern = wineVersion + "_container_pattern.tzst";
-    Log.d("ContainerManager", "extractContainerPatternFile: trying asset: " + containerPattern);
-    boolean result =
-        TarCompressorUtils.extract(
-            TarCompressorUtils.Type.ZSTD,
-            context,
-            containerPattern,
-            containerDir,
-            onExtractFileListener);
-    Log.d("ContainerManager", "extractContainerPatternFile: asset extraction result=" + result);
+    boolean result = false;
+    try {
+      context.getAssets().open(containerPattern).close();
+      Log.d("ContainerManager", "extractContainerPatternFile: trying asset: " + containerPattern);
+      result =
+          TarCompressorUtils.extract(
+              TarCompressorUtils.Type.ZSTD,
+              context,
+              containerPattern,
+              containerDir,
+              onExtractFileListener);
+      Log.d("ContainerManager", "extractContainerPatternFile: asset extraction result=" + result);
+    } catch (Exception ignored) {
+      Log.d(
+          "ContainerManager",
+          "extractContainerPatternFile: asset not bundled, trying installed profile prefix pack: "
+              + containerPattern);
+    }
 
     // Step 2: If asset extraction failed, look for the prefix pack from the installed custom proton
     if (!result) {

@@ -10,12 +10,14 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.provider.Settings
+import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.EaseInOut
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -55,6 +57,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -67,6 +70,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
@@ -75,10 +79,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.TileMode
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -98,6 +106,7 @@ import androidx.lifecycle.lifecycleScope
 import com.winlator.cmod.R
 import com.winlator.cmod.app.shell.UnifiedActivity
 import com.winlator.cmod.feature.settings.DriversFragment
+import com.winlator.cmod.feature.settings.ContainerSettingsComposeDialog
 import com.winlator.cmod.runtime.container.Container
 import com.winlator.cmod.runtime.container.ContainerManager
 import com.winlator.cmod.runtime.content.AdrenotoolsManager
@@ -106,7 +115,6 @@ import com.winlator.cmod.runtime.content.ContentsManager
 import com.winlator.cmod.runtime.content.Downloader
 import com.winlator.cmod.runtime.display.environment.ImageFs
 import com.winlator.cmod.runtime.display.environment.ImageFsInstaller
-import com.winlator.cmod.runtime.wine.DefaultVersion
 import com.winlator.cmod.runtime.wine.WineInfo
 import com.winlator.cmod.shared.android.AppUtils
 import com.winlator.cmod.shared.android.FixedFontScaleFragmentActivity
@@ -134,6 +142,27 @@ private data class Particle(
     val size: Float,
     val phaseOffset: Float,
 )
+
+private val SetupDownloadChaseGradientStops =
+    arrayOf(
+        0.00f to Color(0xFF2196F3),
+        0.125f to Color(0xFF29B6F6),
+        0.25f to Color(0xFF00E5FF),
+        0.375f to Color(0xFF29B6F6),
+        0.50f to Color(0xFF2196F3),
+        0.625f to Color(0xFF29B6F6),
+        0.75f to Color(0xFF00E5FF),
+        0.875f to Color(0xFF29B6F6),
+        1.00f to Color(0xFF2196F3),
+    )
+
+private const val SetupGlassSurfaceAlpha = 0.03f
+private const val SetupGlassActiveSurfaceAlpha = 0.075f
+private const val SetupGlassCompletedSurfaceAlpha = 0.065f
+private const val SetupGlassBorderAlpha = 0.24f
+private const val SetupGlassCompletedBorderAlpha = 0.82f
+private const val SetupGlassCompletedSoftBorderAlpha = 0.62f
+private const val SetupGlassTransferAlpha = 0.78f
 
 private data class TabInfo(
     val key: String,
@@ -489,13 +518,13 @@ class SetupWizardActivity : FixedFontScaleFragmentActivity() {
     private val defaultArmContainerName = mutableStateOf("")
     private val wizardError = mutableStateOf<String?>(null)
     private val transferState = mutableStateOf<TransferState?>(null)
+    private var lastInstallFailureMessage: String? = null
     private val creatingContainer = mutableStateOf(false)
     private val advancedProfiles = mutableStateListOf<RemotePackageSpec>()
     private val advancedInstalledSet = mutableStateListOf<String>()
     private val advancedContainerNames = mutableStateListOf<String>()
 
     private var returnToCaller = false
-    private var pendingContainerSettingsType: String? = null
     private var recommendedPackageRefreshInFlight = false
 
     private val manageStorageLauncher =
@@ -525,18 +554,6 @@ class SetupWizardActivity : FixedFontScaleFragmentActivity() {
             storageGranted.value =
                 permissions[Manifest.permission.WRITE_EXTERNAL_STORAGE] == true ||
                 permissions[Manifest.permission.READ_EXTERNAL_STORAGE] == true
-        }
-
-    private val containerSettingsLauncher =
-        registerForActivityResult(
-            ActivityResultContracts.StartActivityForResult(),
-        ) {
-            when (pendingContainerSettingsType) {
-                "x86" -> prefs(this).edit().putBoolean(KEY_DEFAULT_X86_SETTINGS_DONE, true).apply()
-                "arm64" -> prefs(this).edit().putBoolean(KEY_DEFAULT_ARM64_SETTINGS_DONE, true).apply()
-            }
-            pendingContainerSettingsType = null
-            refreshWizardState()
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -867,9 +884,12 @@ class SetupWizardActivity : FixedFontScaleFragmentActivity() {
         val manager = ContentsManager(this)
         manager.syncContents()
 
+        lastInstallFailureMessage = null
         var extractedProfile: ContentProfile? = null
         var installedProfile: ContentProfile? = null
         var failed = false
+        var failureReason: ContentsManager.InstallFailedReason? = null
+        var failureException: Exception? = null
 
         val callback =
             object : ContentsManager.OnInstallFinishedCallback {
@@ -888,6 +908,8 @@ class SetupWizardActivity : FixedFontScaleFragmentActivity() {
                         return
                     }
                     failed = true
+                    failureReason = reason
+                    failureException = e
                 }
 
                 override fun onSucceed(profile: ContentProfile) {
@@ -905,6 +927,16 @@ class SetupWizardActivity : FixedFontScaleFragmentActivity() {
             }
 
         manager.extraContentFile(Uri.fromFile(file), callback)
+        if (failed) {
+            val reason = failureReason?.name ?: getString(R.string.common_ui_unknown_error)
+            val baseMessage = getString(R.string.setup_wizard_install_failed_reason, reason)
+            lastInstallFailureMessage =
+                failureException?.message
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { getString(R.string.setup_wizard_install_failed_detail, baseMessage, it) }
+                    ?: baseMessage
+            Log.e("SetupWizardActivity", lastInstallFailureMessage, failureException)
+        }
         return if (failed) null else installedProfile
     }
 
@@ -1071,6 +1103,8 @@ class SetupWizardActivity : FixedFontScaleFragmentActivity() {
             )
 
         container.setGraphicsDriver(Container.DEFAULT_GRAPHICS_DRIVER)
+        container.setCPUList(Container.getFallbackCPUList())
+        container.setCPUListWoW64(Container.getFallbackCPUListWoW64())
         container.setDrives(normalizedDrives)
         container.setGraphicsDriverConfig(
             replaceDelimitedConfigValue(
@@ -1090,7 +1124,7 @@ class SetupWizardActivity : FixedFontScaleFragmentActivity() {
                     resolvePreferredContentVersion(
                         contentsManager,
                         ContentProfile.ContentType.CONTENT_TYPE_DXVK,
-                        DefaultVersion.DXVK,
+                        "",
                         if (isArm64) Regex("arm64ec", RegexOption.IGNORE_CASE) else null,
                         if (isArm64) null else Regex("arm64ec", RegexOption.IGNORE_CASE),
                     ),
@@ -1100,7 +1134,7 @@ class SetupWizardActivity : FixedFontScaleFragmentActivity() {
                 resolvePreferredContentVersion(
                     contentsManager,
                     ContentProfile.ContentType.CONTENT_TYPE_VKD3D,
-                    DefaultVersion.VKD3D,
+                    "None",
                     if (isArm64) Regex("arm64ec", RegexOption.IGNORE_CASE) else null,
                     if (isArm64) null else Regex("arm64ec", RegexOption.IGNORE_CASE),
                 ),
@@ -1114,14 +1148,14 @@ class SetupWizardActivity : FixedFontScaleFragmentActivity() {
                 resolvePreferredContentVersion(
                     contentsManager,
                     ContentProfile.ContentType.CONTENT_TYPE_WOWBOX64,
-                    DefaultVersion.WOWBOX64,
+                    "",
                 ),
             )
             container.setFEXCoreVersion(
                 resolvePreferredContentVersion(
                     contentsManager,
                     ContentProfile.ContentType.CONTENT_TYPE_FEXCORE,
-                    DefaultVersion.FEXCORE,
+                    "",
                 ),
             )
         } else {
@@ -1131,14 +1165,14 @@ class SetupWizardActivity : FixedFontScaleFragmentActivity() {
                 resolvePreferredContentVersion(
                     contentsManager,
                     ContentProfile.ContentType.CONTENT_TYPE_BOX64,
-                    DefaultVersion.BOX64,
+                    "",
                 ),
             )
             container.setFEXCoreVersion(
                 resolvePreferredContentVersion(
                     contentsManager,
                     ContentProfile.ContentType.CONTENT_TYPE_FEXCORE,
-                    DefaultVersion.FEXCORE,
+                    "",
                 ),
             )
         }
@@ -1153,17 +1187,7 @@ class SetupWizardActivity : FixedFontScaleFragmentActivity() {
         if (preferredDriver.isNotBlank() && installedDrivers.contains(preferredDriver)) {
             return preferredDriver
         }
-        return try {
-            if (com.winlator.cmod.runtime.system.GPUInformation
-                    .isDriverSupported(DefaultVersion.WRAPPER_ADRENO, this)
-            ) {
-                DefaultVersion.WRAPPER_ADRENO
-            } else {
-                DefaultVersion.WRAPPER
-            }
-        } catch (_: Throwable) {
-            DefaultVersion.WRAPPER
-        }
+        return "System"
     }
 
     private fun resolvePreferredContentVersion(
@@ -1336,9 +1360,18 @@ class SetupWizardActivity : FixedFontScaleFragmentActivity() {
 
                             val installed = installDownloadedPackage(downloaded, spec.remoteUrl)
                             downloaded.delete()
+                            if (installed == null) {
+                                wizardError.value =
+                                    lastInstallFailureMessage
+                                        ?: getString(R.string.setup_wizard_install_failed_reason, spec.verName)
+                            }
                             installed
                         } catch (e: Exception) {
-                            wizardError.value = "Install failed: ${e.message}"
+                            wizardError.value =
+                                getString(
+                                    R.string.setup_wizard_install_failed_reason,
+                                    e.message ?: getString(R.string.common_ui_unknown_error),
+                                )
                             null
                         }
                     }
@@ -1401,9 +1434,18 @@ class SetupWizardActivity : FixedFontScaleFragmentActivity() {
 
                         val installed = installDownloadedPackage(downloaded, spec.remoteUrl)
                         downloaded.delete()
+                        if (installed == null) {
+                            wizardError.value =
+                                lastInstallFailureMessage
+                                    ?: getString(R.string.setup_wizard_install_failed_reason, spec.verName)
+                        }
                         installed
                     } catch (e: Exception) {
-                        wizardError.value = "Install failed: ${e.message}"
+                        wizardError.value =
+                            getString(
+                                R.string.setup_wizard_install_failed_reason,
+                                e.message ?: getString(R.string.common_ui_unknown_error),
+                            )
                         null
                     } finally {
                         transferState.value = null
@@ -1424,12 +1466,20 @@ class SetupWizardActivity : FixedFontScaleFragmentActivity() {
         containerId: Int,
         type: String,
     ) {
-        pendingContainerSettingsType = type
-        containerSettingsLauncher.launch(
-            Intent(this, UnifiedActivity::class.java)
-                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                .putExtra("edit_container_id", containerId),
-        )
+        val container = ContainerManager(this).getContainerById(containerId)
+        if (container == null) {
+            refreshWizardState()
+            return
+        }
+
+        ContainerSettingsComposeDialog(this, container) {
+            when (type) {
+                "x86" -> prefs(this).edit().putBoolean(KEY_DEFAULT_X86_SETTINGS_DONE, true).apply()
+                "arm64" -> prefs(this).edit().putBoolean(KEY_DEFAULT_ARM64_SETTINGS_DONE, true).apply()
+            }
+            refreshAdvancedInstalledSet()
+            refreshWizardState()
+        }.show()
     }
 
     private fun finishWizard() {
@@ -1789,32 +1839,34 @@ class SetupWizardActivity : FixedFontScaleFragmentActivity() {
                     }
                 }
 
-                Spacer(Modifier.height(10.dp))
+                if (transferState.value == null) {
+                    Spacer(Modifier.height(10.dp))
 
-                // ---- Action bar ----
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    GhostPillButton(
-                        label = stringResource(R.string.common_ui_back),
-                        enabled = page > 0 && transferState.value == null,
-                        onClick = { if (page > 0) pageIndex.intValue -= 1 },
-                    )
+                    // ---- Action bar ----
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        GhostPillButton(
+                            label = stringResource(R.string.common_ui_back),
+                            enabled = page > 0,
+                            onClick = { if (page > 0) pageIndex.intValue -= 1 },
+                        )
 
-                    if (page < lastPage) {
-                        AccentPillButton(
-                            label = stringResource(R.string.setup_wizard_next),
-                            enabled = canGoNext && transferState.value == null,
-                            onClick = { if (canGoNext) pageIndex.intValue += 1 },
-                        )
-                    } else {
-                        AccentPillButton(
-                            label = stringResource(R.string.setup_wizard_finish),
-                            enabled = transferState.value == null && !creatingContainer.value,
-                            onClick = { finishWizard() },
-                        )
+                        if (page < lastPage) {
+                            AccentPillButton(
+                                label = stringResource(R.string.setup_wizard_next),
+                                enabled = canGoNext,
+                                onClick = { if (canGoNext) pageIndex.intValue += 1 },
+                            )
+                        } else {
+                            AccentPillButton(
+                                label = stringResource(R.string.setup_wizard_finish),
+                                enabled = !creatingContainer.value,
+                                onClick = { finishWizard() },
+                            )
+                        }
                     }
                 }
             }
@@ -1838,17 +1890,27 @@ class SetupWizardActivity : FixedFontScaleFragmentActivity() {
 
     @Composable
     private fun TransferStrip(state: TransferState) {
-        val animatedProgress by animateFloatAsState(
-            targetValue = state.progress ?: 0f,
-            animationSpec = tween(durationMillis = 400, easing = LinearEasing),
-            label = "transferProgress",
-        )
+        val progressAnim = remember { Animatable(state.progress?.coerceIn(0f, 1f) ?: 0f) }
+        LaunchedEffect(state.currentIndex, state.progress) {
+            val targetProgress = state.progress?.coerceIn(0f, 1f) ?: 0f
+            if (targetProgress < progressAnim.value) {
+                progressAnim.snapTo(targetProgress)
+            } else {
+                progressAnim.animateTo(
+                    targetValue = targetProgress,
+                    animationSpec = tween(durationMillis = 240, easing = LinearEasing),
+                )
+            }
+        }
+        val animatedProgress = progressAnim.value
+        val turquoise = Color(0xFF57CBDE)
+        val glassShape = RoundedCornerShape(12.dp)
         Row(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .background(Color(0xFF182030), RoundedCornerShape(12.dp))
-                    .border(1.dp, Color(0xFF254558), RoundedCornerShape(12.dp))
+                    .background(Color(0xFF111822).copy(alpha = SetupGlassTransferAlpha), glassShape)
+                    .border(1.dp, turquoise.copy(alpha = 0.55f), glassShape)
                     .padding(horizontal = 14.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -1856,7 +1918,7 @@ class SetupWizardActivity : FixedFontScaleFragmentActivity() {
                 modifier =
                     Modifier
                         .size(8.dp)
-                        .background(Color(0xFF57CBDE), RoundedCornerShape(4.dp)),
+                        .background(turquoise, RoundedCornerShape(4.dp)),
             )
             Spacer(Modifier.width(10.dp))
             Column(modifier = Modifier.weight(1f)) {
@@ -1875,7 +1937,7 @@ class SetupWizardActivity : FixedFontScaleFragmentActivity() {
                         Spacer(Modifier.width(8.dp))
                         Text(
                             text = "${state.currentIndex}/${state.total}",
-                            color = Color(0xFF57CBDE),
+                            color = turquoise,
                             fontFamily = SyncopateFont,
                             fontSize = 11.sp,
                         )
@@ -1892,29 +1954,22 @@ class SetupWizardActivity : FixedFontScaleFragmentActivity() {
                 )
                 Spacer(Modifier.height(6.dp))
                 if (state.progress != null) {
-                    Box(
+                    SetupChasingProgressBar(
+                        progress = animatedProgress,
+                        animate = true,
                         modifier =
                             Modifier
                                 .fillMaxWidth()
-                                .height(6.dp)
-                                .background(Color(0xFF293B4D), RoundedCornerShape(3.dp)),
-                    ) {
-                        Box(
-                            modifier =
-                                Modifier
-                                    .fillMaxWidth(animatedProgress.coerceIn(0f, 1f))
-                                    .fillMaxHeight()
-                                    .background(Color(0xFF57CBDE), RoundedCornerShape(3.dp)),
-                        )
-                    }
+                                .height(8.dp),
+                    )
                 } else {
-                    LinearProgressIndicator(
+                    SetupChasingProgressBar(
+                        progress = 1f,
+                        animate = true,
                         modifier =
                             Modifier
                                 .fillMaxWidth()
-                                .height(6.dp),
-                        color = Color(0xFF57CBDE),
-                        trackColor = Color(0xFF293B4D),
+                                .height(8.dp),
                     )
                 }
             }
@@ -1922,11 +1977,80 @@ class SetupWizardActivity : FixedFontScaleFragmentActivity() {
                 Spacer(Modifier.width(12.dp))
                 Text(
                     text = "${(animatedProgress * 100f).toInt()}%",
-                    color = Color(0xFF57CBDE),
+                    color = turquoise,
                     fontFamily = SyncopateFont,
                     fontWeight = FontWeight.Bold,
                     fontSize = 14.sp,
                 )
+            }
+        }
+    }
+
+    @Composable
+    private fun SetupAnimatedProgressFill(
+        modifier: Modifier,
+        widthPx: Float,
+    ) {
+        val infiniteTransition = rememberInfiniteTransition(label = "setupTransferProgressGradient")
+        val gradientOffset by infiniteTransition.animateFloat(
+            initialValue = -widthPx,
+            targetValue = 0f,
+            animationSpec =
+                infiniteRepeatable(
+                    animation = tween(durationMillis = 5000, easing = LinearEasing),
+                    repeatMode = RepeatMode.Restart,
+                ),
+            label = "setupTransferProgressGradientOffset",
+        )
+
+        Box(
+            modifier.background(
+                Brush.horizontalGradient(
+                    colorStops = SetupDownloadChaseGradientStops,
+                    startX = gradientOffset,
+                    endX = gradientOffset + (widthPx * 2f),
+                    tileMode = TileMode.Repeated,
+                ),
+            ),
+        )
+    }
+
+    @Composable
+    private fun SetupChasingProgressBar(
+        progress: Float,
+        animate: Boolean,
+        modifier: Modifier = Modifier,
+    ) {
+        BoxWithConstraints(
+            modifier =
+                modifier
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.34f)),
+        ) {
+            val density = LocalDensity.current
+            val widthPx = with(density) { maxWidth.toPx().coerceAtLeast(1f) }
+            val clampedProgress = progress.coerceIn(0f, 1f)
+
+            if (clampedProgress > 0f) {
+                val fillModifier =
+                    Modifier
+                        .fillMaxHeight()
+                        .fillMaxWidth(clampedProgress.coerceAtLeast(0.015f))
+                        .clip(RectangleShape)
+
+                if (animate) {
+                    SetupAnimatedProgressFill(fillModifier, widthPx)
+                } else {
+                    Box(
+                        fillModifier.background(
+                            Brush.horizontalGradient(
+                                colorStops = SetupDownloadChaseGradientStops,
+                                endX = widthPx * 2f,
+                                tileMode = TileMode.Repeated,
+                            ),
+                        ),
+                    )
+                }
             }
         }
     }
@@ -2115,16 +2239,23 @@ class SetupWizardActivity : FixedFontScaleFragmentActivity() {
         val recommendedLabel = stringResource(R.string.setup_wizard_recommended_label)
         val driversLabel = stringResource(R.string.settings_drivers_title)
         var selectedTab by remember { mutableStateOf("recommended") }
+        val turquoise = Color(0xFF57CBDE)
+        val completedTurquoise = Color(0xFF3FAFBE)
+        val glassShape = RoundedCornerShape(12.dp)
+        val glassSurface = Color.White.copy(alpha = SetupGlassSurfaceAlpha)
+        val glassSurfaceActive = turquoise.copy(alpha = SetupGlassActiveSurfaceAlpha)
+        val glassBorder = Color.White.copy(alpha = SetupGlassBorderAlpha)
+        val mutedDot = Color(0xFF4A5568)
 
         // Build tab keys/labels
         val tabs =
             buildList {
-                add(TabInfo("recommended", recommendedLabel, Color(0xFF57CBDE), highlight = true))
+                add(TabInfo("recommended", recommendedLabel, turquoise, highlight = true))
                 add(
                     TabInfo(
                         "drivers",
                         driversLabel,
-                        if (selectedTab == "drivers") Color(0xFF57CBDE) else Color(0xFF4A5568),
+                        if (selectedTab == "drivers") turquoise else mutedDot,
                     ),
                 )
                 typeOrder.forEach { type ->
@@ -2132,9 +2263,9 @@ class SetupWizardActivity : FixedFontScaleFragmentActivity() {
                     val hasInstalled = advancedProfiles.any { it.type == type && it.verName in advancedInstalledSet }
                     val indicator =
                         when {
-                            selectedTab == key -> Color(0xFF57CBDE)
-                            hasInstalled -> Color(0xFF3B82F6)
-                            else -> Color(0xFF4A5568)
+                            selectedTab == key -> turquoise
+                            hasInstalled -> completedTurquoise
+                            else -> mutedDot
                         }
                     add(TabInfo(key, typeLabels[type] ?: type.toString(), indicator))
                 }
@@ -2146,8 +2277,8 @@ class SetupWizardActivity : FixedFontScaleFragmentActivity() {
             Box(
                 modifier =
                     modifier
-                        .background(Color(0xFF182030), RoundedCornerShape(12.dp))
-                        .border(1.dp, Color(0xFF222D3D), RoundedCornerShape(12.dp))
+                        .background(glassSurface, glassShape)
+                        .border(1.dp, glassBorder, glassShape)
                         .padding(10.dp),
             ) {
                 when (selectedTab) {
@@ -2211,7 +2342,7 @@ class SetupWizardActivity : FixedFontScaleFragmentActivity() {
                                 ) {
                                     CircularProgressIndicator(
                                         modifier = Modifier.size(18.dp),
-                                        color = Color(0xFF57CBDE),
+                                        color = turquoise,
                                         strokeWidth = 2.dp,
                                     )
                                     Spacer(Modifier.width(10.dp))
@@ -2262,9 +2393,9 @@ class SetupWizardActivity : FixedFontScaleFragmentActivity() {
                                                             .background(
                                                                 color =
                                                                     if (highlightInstallAll) {
-                                                                        Color(0xFF131D2F)
+                                                                        glassSurfaceActive
                                                                     } else {
-                                                                        Color.Transparent
+                                                                        glassSurface
                                                                     },
                                                                 shape = installAllShape,
                                                             ).then(
@@ -2280,11 +2411,11 @@ class SetupWizardActivity : FixedFontScaleFragmentActivity() {
                                                                         width = 1.dp,
                                                                         color =
                                                                             if (allRecommendedInstalled) {
-                                                                                Color(0xFF23436F)
+                                                                                completedTurquoise
                                                                             } else if (!installAllEnabled) {
-                                                                                Color(0xFF222D3D)
+                                                                                glassBorder
                                                                             } else {
-                                                                                Color(0xFF306679)
+                                                                                turquoise.copy(alpha = 0.65f)
                                                                             },
                                                                         shape = installAllShape,
                                                                     )
@@ -2313,11 +2444,11 @@ class SetupWizardActivity : FixedFontScaleFragmentActivity() {
                                                             if (highlightInstallAll) {
                                                                 Color(0xFFF0F4FF)
                                                             } else if (allRecommendedInstalled) {
-                                                                Color(0xFF3B82F6)
+                                                                completedTurquoise
                                                             } else if (!installAllEnabled) {
                                                                 Color(0xFF4A5260)
                                                             } else {
-                                                                Color(0xFF8BB8C5)
+                                                                turquoise
                                                             },
                                                     )
                                                 }
@@ -2350,11 +2481,11 @@ class SetupWizardActivity : FixedFontScaleFragmentActivity() {
         ) {
             val isSelected = selectedTab == tab.key
             val interactionSource = remember { MutableInteractionSource() }
-            val bgColor = if (isSelected) Color(0xFF203448) else Color.Transparent
+            val bgColor = if (isSelected) glassSurfaceActive else Color.Transparent
             val labelColor =
                 when {
                     isSelected -> Color(0xFFE6EDF3)
-                    tab.highlight -> Color(0xFF57CBDE)
+                    tab.highlight -> turquoise
                     else -> Color(0xFFCDD9E5)
                 }
             Row(
@@ -2397,8 +2528,8 @@ class SetupWizardActivity : FixedFontScaleFragmentActivity() {
                     modifier =
                         Modifier
                             .fillMaxWidth()
-                            .background(Color(0xFF182030), RoundedCornerShape(12.dp))
-                            .border(1.dp, Color(0xFF222D3D), RoundedCornerShape(12.dp))
+                            .background(glassSurface, glassShape)
+                            .border(1.dp, glassBorder, glassShape)
                             .horizontalScroll(rememberScrollState())
                             .padding(horizontal = 6.dp, vertical = 6.dp),
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -2425,8 +2556,8 @@ class SetupWizardActivity : FixedFontScaleFragmentActivity() {
                         Modifier
                             .weight(0.38f)
                             .fillMaxHeight()
-                            .background(Color(0xFF182030), RoundedCornerShape(12.dp))
-                            .border(1.dp, Color(0xFF222D3D), RoundedCornerShape(12.dp))
+                            .background(glassSurface, glassShape)
+                            .border(1.dp, glassBorder, glassShape)
                             .verticalScroll(rememberScrollState())
                             .padding(6.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -2452,14 +2583,27 @@ class SetupWizardActivity : FixedFontScaleFragmentActivity() {
         enabled: Boolean = true,
         recommended: Boolean = false,
     ) {
-        val bgColor = Color(0xFF19212C)
-        val outlineColor = Color(0xFF2A3443)
+        val turquoise = Color(0xFF57CBDE)
+        val completedTurquoise = Color(0xFF3FAFBE)
+        val cardShape = RoundedCornerShape(12.dp)
+        val bgColor =
+            if (installed) {
+                completedTurquoise.copy(alpha = SetupGlassCompletedSurfaceAlpha)
+            } else {
+                Color.White.copy(alpha = SetupGlassSurfaceAlpha)
+            }
+        val outlineColor =
+            if (installed) {
+                completedTurquoise.copy(alpha = SetupGlassCompletedBorderAlpha)
+            } else {
+                Color.White.copy(alpha = SetupGlassBorderAlpha)
+            }
         Row(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .background(bgColor, RoundedCornerShape(12.dp))
-                    .border(1.dp, outlineColor, RoundedCornerShape(12.dp))
+                    .background(bgColor, cardShape)
+                    .border(1.dp, outlineColor, cardShape)
                     .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -2470,12 +2614,12 @@ class SetupWizardActivity : FixedFontScaleFragmentActivity() {
                             modifier =
                                 Modifier
                                     .size(4.dp)
-                                    .background(Color(0xFF3B82F6), RoundedCornerShape(50)),
+                                    .background(if (installed) completedTurquoise else turquoise, RoundedCornerShape(50)),
                         )
                         Spacer(Modifier.width(5.dp))
                         Text(
                             text = stringResource(R.string.setup_wizard_recommended_label),
-                            color = Color(0xFF8BB8C5),
+                            color = if (installed) completedTurquoise else turquoise,
                             fontFamily = InterFont,
                             fontWeight = FontWeight.Medium,
                             fontSize = 9.sp,
@@ -2503,10 +2647,11 @@ class SetupWizardActivity : FixedFontScaleFragmentActivity() {
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
                 colors =
                     ButtonDefaults.buttonColors(
-                        containerColor = if (installed) Color(0xFF1C2E49) else Color(0xFF1F4659),
-                        contentColor = if (installed) Color(0xFF3B82F6) else Color(0xFF57CBDE),
-                        disabledContainerColor = if (installed) Color(0xFF1C2E49) else Color(0xFF1C232B),
-                        disabledContentColor = if (installed) Color(0xFF3B82F6) else Color(0xFF4A5260),
+                        containerColor =
+                            if (installed) completedTurquoise.copy(alpha = 0.14f) else turquoise.copy(alpha = 0.14f),
+                        contentColor = if (installed) completedTurquoise else turquoise,
+                        disabledContainerColor = if (installed) completedTurquoise.copy(alpha = 0.14f) else turquoise.copy(alpha = 0.16f),
+                        disabledContentColor = if (installed) completedTurquoise else turquoise,
                     ),
             ) {
                 Text(
@@ -2542,7 +2687,12 @@ class SetupWizardActivity : FixedFontScaleFragmentActivity() {
 
         if (installedRuntimes.isEmpty()) {
             Column(
-                modifier = Modifier.fillMaxSize(),
+                modifier =
+                    Modifier
+                        .widthIn(max = 420.dp)
+                        .background(Color.White.copy(alpha = SetupGlassSurfaceAlpha), RoundedCornerShape(12.dp))
+                        .border(1.dp, Color.White.copy(alpha = SetupGlassBorderAlpha), RoundedCornerShape(12.dp))
+                        .padding(horizontal = 18.dp, vertical = 16.dp),
                 verticalArrangement = Arrangement.Center,
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
@@ -2568,8 +2718,13 @@ class SetupWizardActivity : FixedFontScaleFragmentActivity() {
                 contentAlignment = Alignment.TopCenter,
             ) {
                 LazyColumn(
-                    modifier = Modifier.widthIn(max = 420.dp),
+                    modifier =
+                        Modifier
+                            .widthIn(max = 420.dp)
+                            .fillMaxWidth()
+                            .fillMaxHeight(),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
+                    contentPadding = PaddingValues(bottom = 12.dp),
                 ) {
                     items(installedRuntimes) { profile ->
                         RuntimeContainerCard(profile)
@@ -2595,15 +2750,24 @@ class SetupWizardActivity : FixedFontScaleFragmentActivity() {
         val creating = creatingContainer.value
 
         val hasContainer = existingContainer != null
-        val bgColor = Color(0xFF19212C)
-        val outlineColor = if (hasContainer) Color(0xFF23436F) else Color(0xFF2A3443)
+        val turquoise = Color(0xFF57CBDE)
+        val completedTurquoise = Color(0xFF3FAFBE)
+        val cardShape = RoundedCornerShape(12.dp)
+        val bgColor = Color.White.copy(alpha = SetupGlassSurfaceAlpha)
+        val activeColor = if (hasContainer) completedTurquoise else Color(0xFF4A5260)
+        val outlineColor =
+            if (hasContainer) {
+                completedTurquoise.copy(alpha = SetupGlassCompletedSoftBorderAlpha)
+            } else {
+                Color.White.copy(alpha = SetupGlassBorderAlpha)
+            }
 
         Row(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .background(bgColor, RoundedCornerShape(12.dp))
-                    .border(1.dp, outlineColor, RoundedCornerShape(12.dp))
+                    .background(bgColor, cardShape)
+                    .border(1.dp, outlineColor, cardShape)
                     .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -2614,14 +2778,14 @@ class SetupWizardActivity : FixedFontScaleFragmentActivity() {
                             Modifier
                                 .size(6.dp)
                                 .background(
-                                    if (hasContainer) Color(0xFF3B82F6) else Color(0xFF4A5260),
+                                    activeColor,
                                     RoundedCornerShape(3.dp),
                                 ),
                     )
                     Spacer(Modifier.width(6.dp))
                     Text(
                         text = archLabel,
-                        color = if (hasContainer) Color(0xFF3B82F6) else Color(0xFF8B949E),
+                        color = if (hasContainer) activeColor else Color(0xFF8B949E),
                         fontFamily = InterFont,
                         fontSize = 9.sp,
                         letterSpacing = 1.sp,
@@ -2674,16 +2838,17 @@ class SetupWizardActivity : FixedFontScaleFragmentActivity() {
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
                     colors =
                         ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFF57CBDE),
-                            contentColor = Color(0xFF111822),
-                            disabledContainerColor = Color(0xFF222D3D),
-                            disabledContentColor = Color(0xFF4A5260),
+                            containerColor = turquoise.copy(alpha = 0.14f),
+                            contentColor = turquoise,
+                            disabledContainerColor =
+                                if (creating) turquoise.copy(alpha = 0.16f) else Color.White.copy(alpha = 0.08f),
+                            disabledContentColor = if (creating) turquoise else Color(0xFF4A5260),
                         ),
                 ) {
                     if (creating) {
                         CircularProgressIndicator(
                             modifier = Modifier.size(14.dp),
-                            color = Color(0xFF111822),
+                            color = turquoise,
                             strokeWidth = 2.dp,
                         )
                         Spacer(Modifier.width(6.dp))
@@ -2710,8 +2875,8 @@ class SetupWizardActivity : FixedFontScaleFragmentActivity() {
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
                     colors =
                         ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFF223140),
-                            contentColor = Color(0xFFB8C5D1),
+                            containerColor = completedTurquoise.copy(alpha = 0.14f),
+                            contentColor = completedTurquoise,
                         ),
                 ) {
                     Text(
@@ -2736,17 +2901,26 @@ class SetupWizardActivity : FixedFontScaleFragmentActivity() {
         enabled: Boolean = true,
         progress: Float? = null,
     ) {
+        val turquoise = Color(0xFF57CBDE)
+        val completedTurquoise = Color(0xFF3FAFBE)
+        val glassShape = RoundedCornerShape(12.dp)
+        val glassSurface =
+            if (completed) {
+                completedTurquoise.copy(alpha = SetupGlassCompletedSurfaceAlpha)
+            } else {
+                Color.White.copy(alpha = SetupGlassSurfaceAlpha)
+            }
         val borderColor =
             when {
-                completed -> Color(0xFF23436F)
-                progress != null -> Color(0xFF57CBDE)
-                else -> Color(0xFF222D3D)
+                completed -> completedTurquoise.copy(alpha = SetupGlassCompletedBorderAlpha)
+                progress != null -> turquoise
+                else -> Color.White.copy(alpha = SetupGlassBorderAlpha)
             }
         Column(
             modifier =
                 modifier
-                    .background(Color(0xFF182030), RoundedCornerShape(12.dp))
-                    .border(1.dp, borderColor, RoundedCornerShape(12.dp))
+                    .background(glassSurface, glassShape)
+                    .border(1.dp, borderColor, glassShape)
                     .padding(horizontal = 12.dp, vertical = 11.dp),
         ) {
             // Status chip
@@ -2757,8 +2931,8 @@ class SetupWizardActivity : FixedFontScaleFragmentActivity() {
                             .size(6.dp)
                             .background(
                                 when {
-                                    completed -> Color(0xFF3B82F6)
-                                    progress != null -> Color(0xFF57CBDE)
+                                    completed -> completedTurquoise
+                                    progress != null -> turquoise
                                     else -> Color(0xFF4A5260)
                                 },
                                 RoundedCornerShape(3.dp),
@@ -2767,7 +2941,7 @@ class SetupWizardActivity : FixedFontScaleFragmentActivity() {
                 Spacer(Modifier.width(6.dp))
                 Text(
                     text = subtitle.uppercase(),
-                    color = if (completed) Color(0xFF3B82F6) else Color(0xFF8B949E),
+                    color = if (completed) completedTurquoise else Color(0xFF8B949E),
                     fontFamily = InterFont,
                     fontSize = 9.sp,
                     letterSpacing = 1.sp,
@@ -2798,8 +2972,8 @@ class SetupWizardActivity : FixedFontScaleFragmentActivity() {
                         Modifier
                             .fillMaxWidth()
                             .height(3.dp),
-                    color = Color(0xFF57CBDE),
-                    trackColor = Color(0xFF222D3D),
+                    color = turquoise,
+                    trackColor = Color.White.copy(alpha = 0.12f),
                 )
             }
             Spacer(Modifier.height(10.dp))
@@ -2814,17 +2988,17 @@ class SetupWizardActivity : FixedFontScaleFragmentActivity() {
                 contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
                 colors =
                     ButtonDefaults.buttonColors(
-                        containerColor = if (completed) Color(0xFF1C2E49) else Color(0xFF57CBDE),
-                        contentColor = if (completed) Color(0xFF3B82F6) else Color(0xFF111822),
+                        containerColor = if (completed) completedTurquoise.copy(alpha = 0.16f) else turquoise,
+                        contentColor = if (completed) completedTurquoise else Color(0xFF111822),
                         disabledContainerColor =
                             when {
-                                completed -> Color(0xFF1C2E49)
-                                progress != null -> Color(0xFF1C2E49)
-                                else -> Color(0xFF222D3D)
+                                completed -> completedTurquoise.copy(alpha = 0.16f)
+                                progress != null -> turquoise.copy(alpha = 0.14f)
+                                else -> Color.White.copy(alpha = 0.08f)
                             },
                         disabledContentColor =
                             when {
-                                completed -> Color(0xFF3B82F6)
+                                completed -> completedTurquoise
                                 progress != null -> Color(0xFFE6EDF3)
                                 else -> Color(0xFF4A5260)
                             },

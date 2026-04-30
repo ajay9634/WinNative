@@ -1,7 +1,6 @@
 package com.winlator.cmod.runtime.container
 import androidx.compose.runtime.saveable.mapSaver
 import com.winlator.cmod.runtime.compat.box64.Box64Preset
-import com.winlator.cmod.runtime.wine.DefaultVersion
 import com.winlator.cmod.runtime.wine.WineThemeManager
 import kotlin.String
 
@@ -15,13 +14,12 @@ data class ContainerData(
     val audioDriver: String = Container.DEFAULT_AUDIO_DRIVER,
     val wincomponents: String = Container.DEFAULT_WINCOMPONENTS,
     val drives: String = "",
-    val showFPS: Boolean = false,
     val cpuList: String = Container.getFallbackCPUList(),
     val cpuListWoW64: String = Container.getFallbackCPUListWoW64(),
     val wow64Mode: Boolean = false,
     val startupSelection: Byte = Container.STARTUP_SELECTION_ESSENTIAL,
     val box86Version: String = "",
-    val box64Version: String = DefaultVersion.BOX64,
+    val box64Version: String = "",
     val box86Preset: String = Box64Preset.COMPATIBILITY,
     val box64Preset: String = Box64Preset.COMPATIBILITY,
     val desktopTheme: String = WineThemeManager.DEFAULT_DESKTOP_THEME,
@@ -53,7 +51,6 @@ data class ContainerData(
                         "audioDriver" to state.audioDriver,
                         "wincomponents" to state.wincomponents,
                         "drives" to state.drives,
-                        "showFPS" to state.showFPS,
                         "cpuList" to state.cpuList,
                         "cpuListWoW64" to state.cpuListWoW64,
                         "wow64Mode" to state.wow64Mode,
@@ -77,7 +74,6 @@ data class ContainerData(
                         audioDriver = savedMap["audioDriver"] as String,
                         wincomponents = savedMap["wincomponents"] as String,
                         drives = savedMap["drives"] as String,
-                        showFPS = savedMap["showFPS"] as Boolean,
                         cpuList = savedMap["cpuList"] as String,
                         cpuListWoW64 = savedMap["cpuListWoW64"] as String,
                         wow64Mode = savedMap["wow64Mode"] as Boolean,

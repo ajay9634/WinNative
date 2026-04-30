@@ -31,6 +31,7 @@ import com.winlator.cmod.feature.setup.SetupWizardActivity
 import com.winlator.cmod.runtime.audio.midi.MidiManager
 import com.winlator.cmod.runtime.display.environment.ImageFsInstaller
 import com.winlator.cmod.shared.android.AppUtils
+import com.winlator.cmod.shared.android.DirectoryPickerDialog
 import com.winlator.cmod.shared.android.LocaleHelper
 import com.winlator.cmod.shared.android.RefreshRateUtils
 import com.winlator.cmod.shared.io.FileUtils
@@ -42,27 +43,6 @@ import java.io.File
 class OtherSettingsFragment : Fragment() {
     private lateinit var preferences: SharedPreferences
     private var uiState by mutableStateOf(OtherSettingsState())
-
-    // Activity result launchers
-    private val winlatorPathLauncher =
-        registerForActivityResult(
-            ActivityResultContracts.OpenDocumentTree(),
-        ) { uri ->
-            uri ?: return@registerForActivityResult
-            persistUriPermission(uri)
-            preferences.edit { putString("winlator_path_uri", uri.toString()) }
-            refresh()
-        }
-
-    private val shortcutExportPathLauncher =
-        registerForActivityResult(
-            ActivityResultContracts.OpenDocumentTree(),
-        ) { uri ->
-            uri ?: return@registerForActivityResult
-            persistUriPermission(uri)
-            preferences.edit { putString("shortcuts_export_path_uri", uri.toString()) }
-            refresh()
-        }
 
     private val installSoundFontLauncher =
         registerForActivityResult(
@@ -135,15 +115,6 @@ class OtherSettingsFragment : Fragment() {
                                 // AppCompatDelegate recreates attached activities automatically.
                             }
                         },
-                        onRefreshRateSelected = { index ->
-                            val hz =
-                                RefreshRateUtils.parseRefreshRateLabel(
-                                    uiState.refreshRateLabels.getOrNull(index),
-                                )
-                            preferences.edit { putInt("refresh_rate_override", hz) }
-                            if (isAdded) RefreshRateUtils.applyPreferredRefreshRate(requireActivity())
-                            refresh()
-                        },
                         onSoundFontSelected = { index ->
                             // Selection is display-only; no persistence in legacy code.
                             uiState = uiState.copy(soundFontIndex = index)
@@ -157,8 +128,13 @@ class OtherSettingsFragment : Fragment() {
                             installSoundFontLauncher.launch(intent)
                         },
                         onRemoveSoundFont = { removeSelectedSoundFont() },
-                        onPickWinlatorPath = { winlatorPathLauncher.launch(null) },
-                        onPickShortcutExportPath = { shortcutExportPathLauncher.launch(null) },
+                        onPickWinlatorPath = { pickStoredFolder("winlator_path_uri", SettingsConfig.DEFAULT_WINLATOR_PATH) },
+                        onPickShortcutExportPath = {
+                            pickStoredFolder(
+                                "shortcuts_export_path_uri",
+                                SettingsConfig.DEFAULT_SHORTCUT_EXPORT_PATH,
+                            )
+                        },
                         onCursorSpeedChanged = { percent ->
                             preferences.edit { putFloat("cursor_speed", percent / 100f) }
                             refresh()
@@ -215,21 +191,6 @@ class OtherSettingsFragment : Fragment() {
             }
         val languageIndex = LocaleHelper.indexForTag(LocaleHelper.getAppliedLanguageTag())
 
-        // Refresh rate entries + saved selection
-        val refreshRateLabels =
-            RefreshRateUtils.buildRefreshRateEntryLabels(
-                requireActivity(),
-                getString(R.string.settings_general_refresh_rate_auto_max),
-            )
-        val savedRate = preferences.getInt("refresh_rate_override", 0)
-        val refreshRateIndex =
-            if (savedRate == 0) {
-                0
-            } else {
-                val target = "$savedRate Hz"
-                refreshRateLabels.indexOfFirst { it == target }.coerceAtLeast(0)
-            }
-
         // Sound font files
         val soundFontFiles = loadSoundFontFiles(ctx)
         val soundFontIndex = uiState.soundFontIndex.coerceIn(0, (soundFontFiles.size - 1).coerceAtLeast(0))
@@ -253,8 +214,6 @@ class OtherSettingsFragment : Fragment() {
                 checkForUpdates = preferences.getBoolean("check_for_updates", false),
                 languageLabels = languageLabels,
                 languageIndex = languageIndex,
-                refreshRateLabels = refreshRateLabels,
-                refreshRateIndex = refreshRateIndex,
                 soundFontFiles = soundFontFiles,
                 soundFontIndex = soundFontIndex,
                 winlatorPath = winlatorPath,
@@ -297,20 +256,6 @@ class OtherSettingsFragment : Fragment() {
         }
     }
 
-    private fun persistUriPermission(uri: Uri) {
-        try {
-            requireContext().contentResolver.takePersistableUriPermission(
-                uri,
-                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
-            )
-        } catch (e: SecurityException) {
-            AppUtils.showToast(
-                context,
-                getString(R.string.settings_other_persistable_permission_failed, e.message ?: ""),
-            )
-        }
-    }
-
     private fun startImagefsReinstall() {
         val act = activity ?: return
         // Seed the dialog immediately at 0% so the Compose progress dialog shows up.
@@ -332,6 +277,23 @@ class OtherSettingsFragment : Fragment() {
                 }
             },
         )
+    }
+
+    private fun pickStoredFolder(
+        preferenceKey: String,
+        fallbackPath: String,
+    ) {
+        val hostActivity = activity ?: return
+        val currentPath = resolvePathString(preferences.getString(preferenceKey, null), fallbackPath, hostActivity)
+        DirectoryPickerDialog.show(
+            activity = hostActivity,
+            initialPath = currentPath,
+        ) { path ->
+            preferences.edit {
+                putString(preferenceKey, Uri.fromFile(File(path)).toString())
+            }
+            refresh()
+        }
     }
 
     private fun installSoundFont(uri: Uri) {
