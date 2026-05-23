@@ -27,6 +27,7 @@ import com.winlator.cmod.shared.io.FileUtils;
 import com.winlator.cmod.shared.util.Callback;
 import java.io.BufferedReader;
 import java.io.File;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.InetAddress;
@@ -268,27 +269,54 @@ public class GuestProgramLauncherComponent extends EnvironmentComponent {
     }
     try {
       Log.d("GuestProgramLauncherComponent", "Shell command is " + finalCommand);
-      java.lang.Process process =
+      final java.lang.Process process =
           Runtime.getRuntime()
               .exec(
                   finalCommand,
                   envVars.toStringArray(),
                   workingDir != null ? workingDir : imageFs.getRootDir());
+
+      // stderr MUST be drained concurrently with stdout. Wine emits a steady
+      // stream of `fixme:`/`err:` lines; if nothing reads stderr, the kernel
+      // pipe buffer (64 KiB) fills and the child blocks forever on its next
+      // stderr write — even if we're only interested in stdout. Sequential
+      // "drain stdout, then stderr" deadlocks the same way, just less often.
+      final boolean captureStderr = includeStderr;
+      Thread stderrPump =
+          new Thread(
+              () -> {
+                try (BufferedReader er =
+                    new BufferedReader(new InputStreamReader(process.getErrorStream()))) {
+                  String l;
+                  while ((l = er.readLine()) != null) {
+                    if (captureStderr) {
+                      synchronized (output) {
+                        output.append(l).append('\n');
+                      }
+                    }
+                  }
+                } catch (IOException ignored) {
+                  // child closed stderr or we were interrupted — both are fine
+                }
+              },
+              "execShellCommand-stderr-pump");
+      stderrPump.setDaemon(true);
+      stderrPump.start();
+
       try (BufferedReader reader =
-              new BufferedReader(new InputStreamReader(process.getInputStream()));
-          BufferedReader errorReader =
-              new BufferedReader(new InputStreamReader(process.getErrorStream()))) {
+          new BufferedReader(new InputStreamReader(process.getInputStream()))) {
         String line;
         while ((line = reader.readLine()) != null) {
-          output.append(line).append("\n");
-        }
-        if (includeStderr) {
-          while ((line = errorReader.readLine()) != null) {
-            output.append(line).append("\n");
+          synchronized (output) {
+            output.append(line).append('\n');
           }
         }
       }
       process.waitFor();
+      // Stderr pump exits on its own when the child closes its stderr fd
+      // (which happens at process exit). Give it a brief grace period to
+      // append any tail lines before we return.
+      stderrPump.join(200);
     } catch (Exception e) {
       output.append("Error: ").append(e.getMessage());
     }
@@ -303,14 +331,14 @@ public class GuestProgramLauncherComponent extends EnvironmentComponent {
     String box64Version = container.getBox64Version();
     if (box64Version == null) box64Version = "";
 
-    if (shortcut != null) box64Version = shortcut.getExtra("box64Version", box64Version);
+    if (shortcut != null) box64Version = shortcut.getSettingExtra("box64Version", box64Version);
 
     Log.i(
         "GuestProgramLauncherComponent",
         "Launch runtime selected: Box64 version=" + box64Version);
 
     File rootDir = imageFs.getRootDir();
-    boolean box64Missing = !new File(rootDir, "/usr/bin/box64").exists();
+    boolean box64Missing = !new File(rootDir, "usr/bin/box64").exists();
 
     if (box64Missing || !box64Version.equals(container.getExtra("box64Version"))) {
       if (box64Version.isEmpty()) {
@@ -338,7 +366,7 @@ public class GuestProgramLauncherComponent extends EnvironmentComponent {
     }
 
     // Set execute permissions for box64 just in case
-    File box64File = new File(rootDir, "/usr/bin/box64");
+    File box64File = new File(rootDir, "usr/bin/box64");
     if (box64File.exists()) {
       FileUtils.chmod(box64File, 0755);
     }
@@ -361,10 +389,10 @@ public class GuestProgramLauncherComponent extends EnvironmentComponent {
     if (fexcoreVersion == null) fexcoreVersion = "";
 
     if (shortcut != null) {
-      emulator = shortcut.getExtra("emulator", emulator);
-      emulator64 = shortcut.getExtra("emulator64", emulator64);
-      wowbox64Version = shortcut.getExtra("box64Version", wowbox64Version);
-      fexcoreVersion = shortcut.getExtra("fexcoreVersion", fexcoreVersion);
+      emulator = shortcut.getSettingExtra("emulator", emulator);
+      emulator64 = shortcut.getSettingExtra("emulator64", emulator64);
+      wowbox64Version = shortcut.getSettingExtra("box64Version", wowbox64Version);
+      fexcoreVersion = shortcut.getSettingExtra("fexcoreVersion", fexcoreVersion);
     }
 
     boolean usesWowbox64 = emulator.equalsIgnoreCase("wowbox64");
@@ -622,6 +650,15 @@ public class GuestProgramLauncherComponent extends EnvironmentComponent {
       return baseValue;
     }
     return baseValue + ":" + overrideValue;
+  }
+
+  private static String appendFirstExistingPreload(String ldPreload, File[] candidates) {
+    for (File candidate : candidates) {
+      if (candidate.exists()) {
+        return mergePreloadValue(ldPreload, candidate.getAbsolutePath());
+      }
+    }
+    return ldPreload;
   }
 
   private void mergeExternalEnvVars(
@@ -943,27 +980,20 @@ public class GuestProgramLauncherComponent extends EnvironmentComponent {
       ld_preload = ld_preload + fakeinputDest.getAbsolutePath();
     }
 
-    // Samsung and some other OEMs ship a Vulkan ICD dep chain ending in
-    // /system_ext/lib64/libvendorutils.so that references OpenSSL's BIO_flush.
-    // Without libcrypto already mapped, vkCreateInstance fails with res=-9 and
-    // DXVK aborts with "Required Vulkan extension VK_KHR_surface not supported".
-    //
-    // Only /system and /system_ext are in the default linker namespace's
-    // permitted_paths; the conscrypt APEX is not, so preloading from it
-    // blocks the whole execve with a linker namespace error. Fall back to
-    // the imagefs copy as a last resort.
+    // Preload OEM Vulkan ICD deps that otherwise fail lazy symbol resolution.
+    // Keep paths within default linker namespace permitted_paths.
+    File[] jpegCandidates = new File[] {
+        new File("/system/lib64/libjpeg.so"),
+        new File("/system_ext/lib64/libjpeg.so"),
+    };
+    ld_preload = appendFirstExistingPreload(ld_preload, jpegCandidates);
+
     File[] cryptoCandidates = new File[] {
         new File("/system/lib64/libcrypto.so"),
         new File("/system_ext/lib64/libcrypto.so"),
         new File(imageFs.getLibDir(), "libcrypto.so.3"),
     };
-    for (File c : cryptoCandidates) {
-      if (c.exists()) {
-        if (!ld_preload.isEmpty()) ld_preload = ld_preload + ":";
-        ld_preload = ld_preload + c.getAbsolutePath();
-        break;
-      }
-    }
+    ld_preload = appendFirstExistingPreload(ld_preload, cryptoCandidates);
 
     File devInputDir = new File(imageFs.getRootDir(), "dev/input");
     devInputDir.mkdirs();
@@ -998,14 +1028,14 @@ public class GuestProgramLauncherComponent extends EnvironmentComponent {
     String emulator = container.getEmulator();
     String emulator64 = container.getEmulator64();
     if (shortcut != null) {
-      emulator = shortcut.getExtra("emulator", container.getEmulator());
-      emulator64 = shortcut.getExtra("emulator64", container.getEmulator64());
+      emulator = shortcut.getSettingExtra("emulator", container.getEmulator());
+      emulator64 = shortcut.getSettingExtra("emulator64", container.getEmulator64());
     }
 
     if (wineInfo.isArm64EC()) {
       emulator64 = container.getEmulator64();
       if (shortcut != null) {
-        emulator64 = shortcut.getExtra("emulator64", container.getEmulator64());
+        emulator64 = shortcut.getSettingExtra("emulator64", container.getEmulator64());
       }
     }
 

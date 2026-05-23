@@ -32,6 +32,7 @@ import com.winlator.cmod.R
 import com.winlator.cmod.app.PluviaApp
 import com.winlator.cmod.feature.library.DriveItem
 import com.winlator.cmod.feature.library.EnvVarItem
+import androidx.compose.runtime.getValue
 import com.winlator.cmod.feature.library.GameSettingsCallbacks
 import com.winlator.cmod.feature.library.GameSettingsContent
 import com.winlator.cmod.feature.library.GameSettingsStateHolder
@@ -185,7 +186,7 @@ class ShortcutSettingsComposeDialog private constructor(
         }
         dialog.setContentView(composeView)
 
-        // Auto-dismiss when activity is destroyed
+        // Auto-dismiss when activity is destroyed.
         (activity as LifecycleOwner).lifecycle.addObserver(object : DefaultLifecycleObserver {
             override fun onDestroy(owner: LifecycleOwner) {
                 if (dialog.isShowing) dialog.dismiss()
@@ -346,6 +347,7 @@ class ShortcutSettingsComposeDialog private constructor(
         // General
         state.name.value = shortcut.name
         state.launchExePath.value = resolveInitialLaunchExePath()
+        state.launchExeDisplayPath.value = resolveLaunchExeDisplayPath(state.launchExePath.value)
         syncLibraryArtworkState()
 
         // Input
@@ -461,6 +463,19 @@ class ShortcutSettingsComposeDialog private constructor(
         // FPS Limit
         val savedFpsLimit = shortcut.getExtra("fpsLimit", "0")
         state.fpsLimit.intValue = savedFpsLimit.toIntOrNull() ?: 0
+
+        // SGSR 1 per-game shortcut settings
+        state.sgsrEnabled.value = shortcut.getExtra("sgsrEnabled", "0") == "1"
+        state.sgsrUpscaleMode.intValue =
+            shortcut.getExtra("sgsrUpscaleMode", shortcut.getExtra("sgsr_upscale_mode", "1"))
+                .toIntOrNull()
+                ?.coerceIn(1, 6)
+                ?: 1
+        state.sgsrSharpness.intValue =
+            shortcut.getExtra("sgsrSharpness", shortcut.getExtra("sgsr_sharpness", "100"))
+                .toIntOrNull()
+                ?.coerceIn(0, 100)
+                ?: 100
 
         // Graphics driver (basic entries - will be updated after contents sync)
         val graphicsDriverArr =
@@ -1202,6 +1217,17 @@ class ShortcutSettingsComposeDialog private constructor(
             val fpsLimit = state.fpsLimit.intValue
             shortcut.putExtra("fpsLimit", if (fpsLimit > 0) fpsLimit.toString() else null)
 
+            // SGSR 1 is a shortcut-only setting, not a container override.
+            if (state.sgsrEnabled.value) {
+                shortcut.putExtra("sgsrEnabled", "1")
+                shortcut.putExtra("sgsrUpscaleMode", state.sgsrUpscaleMode.intValue.coerceIn(1, 6).toString())
+                shortcut.putExtra("sgsrSharpness", state.sgsrSharpness.intValue.coerceIn(0, 100).toString())
+            } else {
+                shortcut.putExtra("sgsrEnabled", null)
+                shortcut.putExtra("sgsrUpscaleMode", null)
+                shortcut.putExtra("sgsrSharpness", null)
+            }
+
             // Desktop Theme — stored as compound "THEME,TYPE,COLOR" string
             if (state.desktopThemeEntries.value.isNotEmpty()) {
                 val desktopThemeEntries = state.desktopThemeEntries.value
@@ -1363,20 +1389,27 @@ class ShortcutSettingsComposeDialog private constructor(
     }
 
     private fun resolveInitialLaunchExePath(): String {
-        val storedPath = shortcut.getExtra("launch_exe_path")
-        if (storedPath.isNotEmpty()) return storedPath
-
         val gameSource = shortcut.getExtra("game_source", "")
         if (gameSource == "CUSTOM") {
             val customExe = shortcut.getExtra("custom_exe")
             if (customExe.isNotEmpty()) return customExe
         }
 
+        val storedPath = shortcut.getExtra("launch_exe_path")
+        if (storedPath.isNotEmpty()) return storedPath
+
         return ""
     }
 
     private fun resolveExePickerInitialPath(): String? {
-        val currentPath = state.launchExePath.value.ifBlank { shortcut.getExtra("launch_exe_path") }
+        val currentPath =
+            state.launchExePath.value.ifBlank {
+                if (shortcut.getExtra("game_source", "") == "CUSTOM") {
+                    shortcut.getExtra("custom_exe").ifBlank { shortcut.getExtra("launch_exe_path") }
+                } else {
+                    shortcut.getExtra("launch_exe_path")
+                }
+            }
         if (currentPath.isBlank()) {
             return shortcut.getExtra("game_install_path")
                 .takeIf { it.isNotBlank() && File(it).isDirectory }
@@ -1404,6 +1437,7 @@ class ShortcutSettingsComposeDialog private constructor(
             } else {
                 exeFile.absolutePath
             }
+        state.launchExeDisplayPath.value = exeFile.absolutePath
     }
 
     private fun normalizeLaunchExeForShortcut(path: String): String {
@@ -1433,6 +1467,20 @@ class ShortcutSettingsComposeDialog private constructor(
         }
 
         return directFile
+    }
+
+    private fun resolveLaunchExeDisplayPath(path: String): String {
+        if (path.isBlank()) return ""
+
+        val directFile = File(path)
+        if (directFile.isAbsolute) return directFile.absolutePath
+
+        val installPath = shortcut.getExtra("game_install_path")
+        if (installPath.isNotBlank()) {
+            return File(installPath, path.replace("\\", File.separator)).absolutePath
+        }
+
+        return path
     }
 
     private fun relativePathWithinGameInstall(file: File): String? {
@@ -1776,6 +1824,7 @@ class ShortcutSettingsComposeDialog private constructor(
             state.gfxMaxDeviceMemoryEntries.value.getOrElse(state.gfxSelectedMaxDeviceMemory.intValue) { "0" }
         )
         val presentMode = state.gfxPresentModeEntries.value.getOrElse(state.gfxSelectedPresentMode.intValue) { "mailbox" }
+        val compositorPresentMode = state.gfxCompositorPresentModeEntries.value.getOrElse(state.gfxSelectedCompositorPresentMode.intValue) { "fifo" }
         val syncFrame = if (state.gfxSyncFrame.value) "1" else "0"
         val disablePresentWait = if (state.gfxDisablePresentWait.value) "1" else "0"
         val resourceType = state.gfxResourceTypeEntries.value.getOrElse(state.gfxSelectedResourceType.intValue) { "auto" }
@@ -1787,7 +1836,8 @@ class ShortcutSettingsComposeDialog private constructor(
                 "maxDeviceMemory=$maxDeviceMemory;presentMode=$presentMode;syncFrame=$syncFrame;" +
                 "disablePresentWait=$disablePresentWait;resourceType=$resourceType;" +
                 "bcnEmulation=$bcnEmulation;bcnEmulationType=$bcnEmulationType;" +
-                "bcnEmulationCache=$bcnEmulationCache;gpuName=$gpuName"
+                "bcnEmulationCache=$bcnEmulationCache;gpuName=$gpuName;" +
+                "compositorPresentMode=$compositorPresentMode"
     }
 
     private fun buildDxvkConfigFromState(): String {
@@ -1823,6 +1873,7 @@ class ShortcutSettingsComposeDialog private constructor(
         state.gfxVulkanVersionEntries.value = context.resources.getStringArray(R.array.vulkan_version_entries).toList()
         state.gfxMaxDeviceMemoryEntries.value = context.resources.getStringArray(R.array.device_memory_entries).toList()
         state.gfxPresentModeEntries.value = context.resources.getStringArray(R.array.present_mode_entries).toList()
+        state.gfxCompositorPresentModeEntries.value = context.resources.getStringArray(R.array.compositor_present_mode_entries).toList()
         state.gfxResourceTypeEntries.value = context.resources.getStringArray(R.array.resource_type_entries).toList()
         state.gfxBcnEmulationEntries.value = context.resources.getStringArray(R.array.bcn_emulation_entries).toList()
         state.gfxBcnEmulationTypeEntries.value = context.resources.getStringArray(R.array.bcn_emulation_type_entries).toList()
@@ -1851,6 +1902,7 @@ class ShortcutSettingsComposeDialog private constructor(
         selectByValue(state.gfxGpuNameEntries.value, config["gpuName"] ?: "Device", state.gfxSelectedGpuName)
         selectByNumber(state.gfxMaxDeviceMemoryEntries.value, config["maxDeviceMemory"] ?: "0", state.gfxSelectedMaxDeviceMemory)
         selectByValue(state.gfxPresentModeEntries.value, config["presentMode"] ?: "mailbox", state.gfxSelectedPresentMode)
+        selectByValue(state.gfxCompositorPresentModeEntries.value, config["compositorPresentMode"] ?: "fifo", state.gfxSelectedCompositorPresentMode)
         selectByValue(state.gfxResourceTypeEntries.value, config["resourceType"] ?: "auto", state.gfxSelectedResourceType)
         selectByValue(state.gfxBcnEmulationEntries.value, config["bcnEmulation"] ?: "none", state.gfxSelectedBcnEmulation)
         selectByValue(state.gfxBcnEmulationTypeEntries.value, config["bcnEmulationType"] ?: "compute", state.gfxSelectedBcnEmulationType)

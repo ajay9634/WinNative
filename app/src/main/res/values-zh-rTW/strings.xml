@@ -66,6 +66,8 @@
     <string name="common_ui_settings">設定</string>
     <string name="common_ui_enable_all">全部啟用</string>
     <string name="common_ui_disable_all">全部停用</string>
+    <string name="common_ui_select_all">全選</string>
+    <string name="common_ui_deselect_all">取消全選</string>
     <string name="common_ui_on">開啟</string>
     <string name="common_ui_off">關閉</string>
     <string name="common_ui_already_set">已設定</string>
@@ -102,6 +104,26 @@
     <string name="common_ui_install">安裝</string>
     <string name="common_ui_application">應用程式</string>
     <string name="common_ui_check">檢查</string>
+    <string name="store_game_check_for_update">檢查更新</string>
+    <string name="store_game_checking_for_update">正在檢查...</string>
+    <string name="store_game_download_update">下載更新</string>
+    <string name="store_game_no_update_available">沒有可用更新</string>
+    <string name="store_game_update_available">有可用更新</string>
+    <string name="store_game_update_check_failed">更新檢查失敗</string>
+    <string name="store_game_update">更新</string>
+    <string name="store_game_workshop">工作坊</string>
+    <string name="store_game_verify_files">驗證檔案</string>
+    <string name="store_game_verify_started">正在驗證 %1$s — 請查看下載分頁</string>
+    <string name="store_game_steam_options">Steam 選項</string>
+    <string name="store_game_verify_complete">檔案驗證完成</string>
+    <string name="store_game_verify_failed_notice">檔案驗證失敗</string>
+    <string name="store_game_progress_background_hint">你可以關閉此視窗 — 它會繼續執行。可隨時在下載分頁查看。</string>
+    <string name="store_game_checking_updates">正在檢查更新…</string>
+    <string name="store_game_no_updates_notice">沒有可用更新</string>
+    <string name="store_game_update_complete">更新完成</string>
+    <string name="store_game_update_failed_notice">更新失敗</string>
+    <string name="store_game_update_check_failed_notice">檢查更新失敗</string>
+    <string name="store_game_download_already_active">此遊戲已在下載。請先取消目前的下載，然後再新增 DLC。</string>
     <string name="common_ui_select">選擇</string>
     <string name="common_ui_select_folder">選擇資料夾</string>
     <string name="common_ui_current_folder">目前資料夾</string>
@@ -137,6 +159,7 @@
     <string name="library_games_shortcut_created">捷徑已建立</string>
     <string name="library_games_failed_to_create_shortcut">無法建立捷徑：%s</string>
     <string name="library_games_install_path">安裝路徑</string>
+    <string name="library_games_not_enough_space">還需要 %1$s 空間</string>
     <string name="library_games_download_slash_install">下載 / 安裝</string>
     <string name="library_games_save_management">存檔管理</string>
     <string name="library_games_download_install_available">%1$s / %2$s・可用：%3$s</string>
@@ -159,7 +182,7 @@
     <string name="library_games_no_games_hub">尚未安裝任何遊戲\n點擊以開啟 Winlator 後端</string>
     <string name="library_games_installed_badge">已安裝</string>
     <string name="library_games_unknown_game">未知遊戲</string>
-    <string name="library_games_layouts_header">版面配置</string>
+    <string name="library_games_layouts_header">遊戲庫版面配置</string>
     <string name="library_games_layout_carousel">輪播</string>
     <string name="library_games_layout_list">清單</string>
     <string name="library_games_custom_game">自訂遊戲</string>
@@ -221,6 +244,8 @@
     <string name="downloads_queue_phase_cancelled">已取消</string>
     <string name="downloads_queue_phase_failed">失敗：%1$s</string>
     <string name="downloads_queue_cancel_download">取消下載</string>
+    <string name="downloads_queue_cancel_download_title">取消下載？</string>
+    <string name="downloads_queue_cancel_download_warning">取消 DLC、遊戲或更新下載可能會損壞遊戲安裝。\n\n確定要取消嗎？</string>
     <string name="downloads_queue_empty">沒有進行中的下載。</string>
 
     <!-- Containers > List -->
@@ -255,13 +280,13 @@
     <string name="shortcuts_properties_exclusive_input">獨佔輸入</string>
     <string name="shortcuts_properties_custom_game_settings">自訂遊戲設定</string>
     <string name="shortcuts_properties_use_cold_client">使用 ColdClient Launcher</string>
-    <string name="shortcuts_properties_use_cold_client_description">ColdClient 是處理 Steam 模擬和 DRM 的首選方式。它在執行時修補 DRM，無需修改遊戲檔案。</string>
+    <string name="shortcuts_properties_use_cold_client_description">Steam 遊戲的 Steam 模擬模式 — 處理 DRM、成就和 DLC。建議用於所有 Steam 遊戲。</string>
     <string name="shortcuts_properties_unpack_files">舊版 DRM</string>
-    <string name="shortcuts_properties_unpack_files_description">從磁碟上的 exe 中移除 SteamStub DRM。僅在遊戲無法正常啟動時啟用。ColdClient 的執行階段修補程式會自動處理大多數遊戲。</string>
+    <string name="shortcuts_properties_unpack_files_description">從 exe 中移除 SteamStub DRM。一次性操作。僅在遊戲出問題時停用。</string>
     <string name="shortcuts_properties_force_dlc">強制 DLC</string>
-    <string name="shortcuts_properties_force_dlc_description">僅在 DLC 未被偵測到或含 DLC 的存檔無法正常運作時啟用</string>
+    <string name="shortcuts_properties_force_dlc_description">如果 DLC 未被偵測到或 DLC 存檔無法正常運作，請啟用。</string>
     <string name="shortcuts_properties_launch_steam_client_beta">啟動 Steam 用戶端（測試版）</string>
-    <string name="shortcuts_properties_launch_steam_client_description">在 Wine 中啟動真實 Steam 客戶端\n需要 Steam 帳號，可能會降低效能\n並非所有遊戲都適用</string>
+    <string name="shortcuts_properties_launch_steam_client_description">在 Wine 中執行真實 Steam 客戶端。需要帳號。可能會降低效能；並非所有遊戲都適用。</string>
     <string name="shortcuts_properties_steam_type">Steam 客戶端效能</string>
     <string name="steam_section_emulator">Steam 模擬器 (Goldberg)</string>
     <string name="steam_section_real_client">真實 Steam 客戶端</string>
@@ -491,6 +516,7 @@
     <string name="container_graphics_bcn_emulation">BCn 模擬</string>
     <string name="container_graphics_bcn_emulation_type">BCn 模擬類型</string>
     <string name="container_graphics_bcn_emulation_cache">BCn 模擬快取</string>
+    <string name="shortcuts_graphics_sgsr_full_title">Snapdragon™ 遊戲超解析度 1</string>
     <!-- Container > Presets -->
     <string name="container_presets_confirm_duplicate">您要複製此預設嗎？</string>
     <string name="container_presets_confirm_remove">您要移除此預設嗎？</string>
@@ -551,6 +577,8 @@
     <string name="session_drawer_exit_subtitle">關閉執行中的工作階段</string>
     <string name="session_drawer_touchscreen_overlay">觸控螢幕覆蓋層</string>
     <string name="session_drawer_resume">繼續</string>
+    <string name="session_drawer_retry">重試</string>
+    <string name="downloads_no_internet">無網際網路連線</string>
     <string name="session_drawer_pause">暫停</string>
     <string name="session_drawer_wine_processes_paused">Wine 程序已暫停</string>
     <string name="session_drawer_pause_all_wine_processes">暫停所有 Wine 程序</string>
@@ -758,6 +786,8 @@
     <string name="settings_debug_input_logs_description">記錄手把、觸控和鍵盤輸入事件</string>
     <string name="settings_debug_download_logs">下載日誌</string>
     <string name="settings_debug_download_logs_description">記錄下載解析器和 WinNative 備援事件</string>
+    <string name="settings_debug_vulkan_validation_layers_title">Vulkan 驗證層</string>
+    <string name="settings_debug_vulkan_validation_layers_subtitle">重新啟動顯示以套用。</string>
     <string name="settings_debug_share_logs">分享日誌</string>
     <string name="settings_debug_logs_subject">WinNative 日誌 (%1$s)</string>
     <string name="settings_debug_no_logs_available">沒有可用的除錯日誌。請先啟用除錯選項並啟動遊戲。</string>
@@ -812,6 +842,11 @@
     <string name="settings_content_extracting_detail">正在解壓\u2026（%1$d 個檔案）</string>
     <string name="settings_content_preparing_package">正在準備套件\u2026</string>
     <string name="settings_content_download_complete">下載完成</string>
+    <string name="settings_content_already_installed_title">元件已安裝</string>
+    <string name="settings_content_already_installed_message">此元件已安裝。再次下載前請先移除已安裝的副本。
+
+安裝路徑：
+%1$s</string>
     <string name="settings_content_conflicting_title">已安裝衝突的內容</string>
     <string name="settings_content_conflicting_message">請先解除安裝衝突的內容再下載此套件。
 
@@ -984,9 +1019,7 @@
     <string name="preloader_downloading_cloud">正在下載雲端存檔…</string>
     <string name="preloader_syncing_cloud">正在同步雲端存檔…</string>
     <string name="preloader_cloud_downloading">雲端同步下載中…</string>
-    <string name="preloader_cloud_backup">正在備份存檔至 Google 雲端硬碟…</string>
     <string name="cloud_sync_failed_provider">%1$s 雲端同步失敗。</string>
-    <string name="google_cloud_backup_failed">Google 雲端硬碟備份失敗。</string>
     <string name="preloader_platform_steam">Steam</string>
     <string name="preloader_platform_epic">Epic Games</string>
     <string name="preloader_platform_gog">GOG</string>
@@ -994,13 +1027,6 @@
 
     <!-- Missing translations -->
     <string name="common_ui_graphics">圖形</string>
-    <string name="container_backups_title">備份</string>
-    <string name="container_backups_prompt">選擇要對此容器備份執行的操作。</string>
-    <string name="container_backups_backing_up">正在備份容器…</string>
-    <string name="container_backups_restoring">正在還原容器…</string>
-    <string name="container_backups_checking">正在檢查容器備份…</string>
-    <string name="container_backups_select_title">選擇要還原的備份</string>
-    <string name="container_backups_no_files">未在 Google Drive 中找到容器備份。</string>
     <string name="steam_section_title">Steam</string>
     <string name="binding_secondary">次要綁定</string>
     <string name="input_controls_editor_tap_to_switch">點按切換</string>
@@ -1010,6 +1036,7 @@
     <string name="session_drawer_fps_monitor">FPS 監視器</string>
     <string name="session_drawer_fps_monitor_subtitle">顯示即時效能統計資料</string>
     <string name="session_drawer_dual_series_battery">Dual Series 電量</string>
+    <string name="session_drawer_hud_frametime_numeric">將影格時間顯示為數字</string>
     <string name="session_drawer_command_center">控制中心</string>
     <string name="session_drawer_command_center_input">輸入</string>
     <string name="session_drawer_command_center_display">顯示</string>
@@ -1022,7 +1049,6 @@
     <string name="session_drawer_color_profile_hdr">HDR</string>
     <string name="session_drawer_color_profile_natural">自然</string>
     <string name="session_drawer_color_profile_crt">CRT 效果</string>
-    <string name="session_drawer_upscaler_dls">鮮豔</string>
     <string name="session_drawer_calibrate_advanced">進階校準</string>
     <string name="session_drawer_rail_label_hud">HUD</string>
     <string name="session_drawer_rail_label_gyro">陀螺儀</string>
@@ -1048,19 +1074,17 @@
     <string name="session_drawer_logs_share_chooser">分享工作階段日誌</string>
     <string name="session_drawer_logs_share_failed">無法分享日誌</string>
     <string name="session_drawer_logs_share_empty">沒有可分享的日誌行</string>
-    <string name="session_drawer_super_resolution">銳化濾鏡</string>
-    <string name="session_drawer_upscaler_mode">濾鏡</string>
-    <string name="session_drawer_upscaler_fsr">FSR 1</string>
+    <string name="session_drawer_super_resolution">超解析度</string>
+    <string name="session_drawer_upscaler_mode">升尺度器</string>
+    <string name="session_drawer_upscaler_fsr">SGSR 1</string>
+    <string name="session_drawer_vivid">鮮豔</string>
+    <string name="session_drawer_vivid_strength">鮮豔強度</string>
     <string name="session_drawer_main_menu_title">選單</string>
     <string name="session_gyroscope_activator">啟動器</string>
     <string name="settings_general_check_for_updates">檢查更新</string>
     <string name="settings_general_check_for_updates_summary">啟動時及定期自動檢查新版本。</string>
     <string name="setup_wizard_containers">容器設定</string>
-    <string name="google_cloud_auto_backup">雲端同步自動備份</string>
-    <string name="google_cloud_auto_backup_summary">每次退出遊戲時自動將遊戲存檔備份到 Google Drive。</string>
     <string name="cloud_saves_title">雲端存檔</string>
-    <string name="cloud_saves_backup">備份雲端存檔</string>
-    <string name="cloud_saves_restore">還原雲端存檔</string>
     <string name="cloud_sync_title">雲端同步</string>
     <string name="cloud_sync_enabled_summary">啟動時下載雲端存檔，並在退出時同步/備份。</string>
     <string name="cloud_sync_disabled_summary">啟動此遊戲時不下載雲端存檔，也不在退出時同步。</string>
@@ -1086,4 +1110,130 @@
     <string name="fexcore_env_var_help__kernelunalignedatomicbackpatching">Backpatches kernel-handled unaligned atomics to reduce kernel context switches.</string>
     <string name="fexcore_env_var_help__maxinst">Maximum number of instructions stored in a compiled block.</string>
     <string name="fexcore_env_var_help__strictinprocesssplitlocks">Uses a strict process-wide lock for split unaligned atomic accesses.</string>
+    <!-- Translated batch (110 strings) -->
+    <string name="cloud_saves_history_empty">尚無先前的存檔備份。被取代的存檔和手動備份將在此顯示 30 天。</string>
+    <string name="cloud_saves_history_loading">正在載入存檔歷史紀錄\u2026</string>
+    <string name="cloud_saves_history_origin_auto">自動</string>
+    <string name="cloud_saves_history_origin_cloud">雲端</string>
+    <string name="cloud_saves_history_origin_local">本機</string>
+    <string name="cloud_saves_history_origin_manual">手動</string>
+    <string name="cloud_saves_history_refresh">重新整理</string>
+    <string name="cloud_saves_history_rename">重新命名</string>
+    <string name="cloud_saves_history_rename_clear">清除</string>
+    <string name="cloud_saves_history_rename_failed">無法重新命名備份。</string>
+    <string name="cloud_saves_history_rename_hint">例如：Boss 戰、結局前</string>
+    <string name="cloud_saves_history_rename_save">儲存</string>
+    <string name="cloud_saves_history_rename_success">備份已重新命名。</string>
+    <string name="cloud_saves_history_rename_title">為此備份命名</string>
+    <string name="cloud_saves_history_restore">還原</string>
+    <string name="cloud_saves_history_restore_confirm_body">這將以 %1$s 的備份取代您目前的本機存檔。</string>
+    <string name="cloud_saves_history_restore_confirm_title">還原此備份？</string>
+    <string name="cloud_saves_history_restore_failed">無法還原此備份。</string>
+    <string name="cloud_saves_history_restore_success">存檔已從備份還原。</string>
+    <string name="cloud_saves_history_sign_in">請登入 Google 以檢視您的存檔歷史紀錄。</string>
+    <string name="cloud_saves_history_title">存檔歷史紀錄</string>
+    <string name="cloud_saves_keep_replaced_backup">保留被取代存檔的備份</string>
+    <string name="cloud_saves_keep_replaced_backup_summary">若您改變心意，可從存檔歷史紀錄中還原。</string>
+    <string name="cloud_saves_no_backups">此遊戲尚無備份。</string>
+    <string name="cloud_saves_offline_mode">停用雲端同步</string>
+    <string name="cloud_saves_offline_mode_summary">停止此遊戲的所有自動雲端活動。</string>
+    <string name="cloud_saves_sync_from_provider">從 %1$s 雲端同步</string>
+    <string name="cloud_saves_sync_from_provider_failed">無法從 %1$s 下載存檔。</string>
+    <string name="cloud_saves_sync_from_provider_generic">從雲端同步</string>
+    <string name="cloud_saves_sync_from_provider_success">%1$s 雲端存檔已下載。</string>
+    <string name="cloud_saves_syncing_from_provider">正在從 %1$s 下載存檔\u2026</string>
+    <string name="cloud_saves_sync_summary">取得 %1$s 目前擁有的版本。</string>
+    <string name="cloud_saves_sync_summary_generic">取得目前的雲端版本。</string>
+    <string name="common_ui_exit_app_confirm">結束 WinNative？</string>
+    <string name="container_surface_effect">介面效果</string>
+    <string name="downloads_queue_cancel_download_confirm">取消 %1$s 的下載並刪除所有已下載的檔案？</string>
+    <string name="downloads_queue_paused_resume_hint">已暫停 - 點選「繼續」以繼續下載</string>
+    <string name="downloads_queue_phase_applying_data">正在套用資料…</string>
+    <string name="downloads_queue_phase_downloading">正在下載…</string>
+    <string name="downloads_queue_phase_downloading_file">正在下載… [%1$s]</string>
+    <string name="downloads_queue_phase_finalizing">正在完成…</string>
+    <string name="downloads_queue_phase_patching">正在修補…</string>
+    <string name="downloads_queue_phase_preparing">正在準備…</string>
+    <string name="downloads_queue_phase_queued">已排隊</string>
+    <string name="downloads_queue_phase_unknown">未知</string>
+    <string name="downloads_queue_phase_unpacking">正在解壓縮…</string>
+    <string name="downloads_queue_phase_updating">正在更新…</string>
+    <string name="downloads_queue_phase_verifying">正在驗證…</string>
+    <string name="downloads_queue_phase_verifying_file">正在驗證… [%1$s]</string>
+    <string name="downloads_queue_status_label">狀態：</string>
+    <string name="downloads_queue_this_game">此遊戲</string>
+    <string name="hud_position_bottom_center">底部置中</string>
+    <string name="hud_position_bottom_left">左下角</string>
+    <string name="hud_position_bottom_right">右下角</string>
+    <string name="hud_position_left_center">左側置中</string>
+    <string name="hud_position_menu_title">移動 HUD 至</string>
+    <string name="hud_position_right_center">右側置中</string>
+    <string name="hud_position_top_center">頂部置中</string>
+    <string name="hud_position_top_left">左上角</string>
+    <string name="hud_position_top_right">右上角</string>
+    <string name="input_controls_editor_number_of_bindings">按鍵綁定數量</string>
+    <string name="input_controls_editor_opacity">不透明度</string>
+    <string name="input_controls_editor_radial_menu">放射狀選單</string>
+    <string name="input_controls_editor_radial_menu_options">放射狀選單選項</string>
+    <string name="input_controls_tap_to_click">點觸即按</string>
+    <string name="num_controllers">控制器數量</string>
+    <string name="session_drawer_controls_section">控制</string>
+    <string name="session_drawer_header_subtitle">快速存取控制、覆蓋層及工作階段工具</string>
+    <string name="session_drawer_hud_alpha">Alpha</string>
+    <string name="session_drawer_hud_alpha_input_title">設定 Alpha</string>
+    <string name="session_drawer_hud_disabled_hint">開啟覆蓋層以進行自訂</string>
+    <string name="session_drawer_hud_elements">HUD 元素</string>
+    <string name="session_drawer_hud_input_hint">請輸入 %1$d 到 %2$d 之間的值。超出限制的值將被截斷。</string>
+    <string name="session_drawer_hud_scale">縮放</string>
+    <string name="session_drawer_hud_scale_input_title">設定縮放</string>
+    <string name="session_drawer_hud_summary">調整覆蓋層可見性與資料顯示點</string>
+    <string name="session_drawer_screen_effects">螢幕效果</string>
+    <string name="session_drawer_session_section">工作階段</string>
+    <string name="session_drawer_swipe_hint">向外滑動即可返回遊戲</string>
+    <string name="session_gamepad_enable_vibration">啟用震動</string>
+    <string name="session_gyroscope_experimental_mouse_movement">實驗性滑鼠移動</string>
+    <string name="session_gyroscope_mouse_scale">滑鼠縮放</string>
+    <string name="session_gyroscope_mouse_sensitivity_format">滑鼠縮放：%1$d%%</string>
+    <string name="settings_other_setup_wizard_summary">再次開啟設定精靈以檢視權限、系統檔案與預設容器。</string>
+    <string name="settings_other_setup_wizard_title">設定精靈</string>
+    <string name="shortcuts_library_artwork_carousel_title">輪播圖片</string>
+    <string name="shortcuts_library_artwork_change">更換圖片</string>
+    <string name="shortcuts_library_artwork_failed">載入所選圖片失敗。</string>
+    <string name="shortcuts_library_artwork_game_card_title">遊戲卡片圖片</string>
+    <string name="shortcuts_library_artwork_grid_title">格狀圖片</string>
+    <string name="shortcuts_library_artwork_list_title">清單圖片</string>
+    <string name="shortcuts_library_artwork_open_source">開啟 SteamGridDB</string>
+    <string name="shortcuts_library_artwork_selected">已選擇：%1$s</string>
+    <string name="shortcuts_library_artwork_set">設定圖片</string>
+    <string name="shortcuts_library_artwork_title">遊戲庫美術圖</string>
+    <string name="shortcuts_list_readded_existing">已重新新增現有捷徑</string>
+    <string name="shortcuts_properties_runtime_patcher">執行時期 DRM 修補程式</string>
+    <string name="shortcuts_properties_runtime_patcher_description">啟動時注入 DRM 修補 DLL。會降低 FPS——僅在單獨使用 Unpack Files 失敗時使用。</string>
+    <!-- Cloud Saves > Custom save folder picker -->
+    <string name="cloud_saves_custom_select_folder">選擇存檔資料夾</string>
+    <string name="cloud_saves_custom_folder_label">存檔資料夾</string>
+    <string name="cloud_saves_custom_select_folder_summary">指向容器內的存檔目錄</string>
+    <string name="cloud_saves_custom_no_container">此捷徑沒有可用的容器</string>
+    <string name="cloud_saves_custom_picker_title">選擇存檔資料夾</string>
+    <string name="cloud_saves_custom_outside_drive_c">所選資料夾必須位於容器的 C: 磁碟內</string>
+    <string name="cloud_saves_custom_path_map_failed">無法將所選資料夾對應為 Windows 路徑。</string>
+    <string name="cloud_saves_custom_folder_set">存檔資料夾已設為 %1$s</string>
+
+    <!-- Cloud Saves > Steam Cloud actions -->
+    <string name="cloud_saves_steam_sync_label">從 Steam Cloud 同步</string>
+    <string name="cloud_saves_steam_sync_helper">下載最新存檔</string>
+    <string name="cloud_saves_steam_sync_success">已從 Steam Cloud 同步</string>
+    <string name="cloud_saves_steam_sync_failed">Steam Cloud 同步失敗</string>
+    <string name="cloud_saves_steam_browse_label">瀏覽 Steam</string>
+    <string name="cloud_saves_steam_browse_helper">開啟雲端儲存空間</string>
+    <string name="cloud_saves_steam_browse_no_browser">沒有可用的瀏覽器可開啟 Steam 頁面</string>
+    <string name="cloud_saves_steam_import_label">匯入檔案</string>
+    <string name="cloud_saves_steam_import_helper">還原已下載的檔案</string>
+    <string name="cloud_saves_steam_import_picker_unavailable">檔案選擇器無法使用</string>
+    <string name="cloud_saves_steam_restore_overwrite_body">這會下載 Steam Cloud 目前的存檔檔案，並覆寫目前的存檔檔案。</string>
+
+    <!-- Cloud Saves > Internal result messages -->
+    <string name="cloud_saves_invalid_app_id">應用程式 ID 無效</string>
+    <string name="cloud_saves_label_saved">標籤已儲存</string>
 </resources>
+

@@ -66,6 +66,8 @@
     <string name="common_ui_settings">Налаштування</string>
     <string name="common_ui_enable_all">Увімкнути все</string>
     <string name="common_ui_disable_all">Вимкнути все</string>
+    <string name="common_ui_select_all">Вибрати все</string>
+    <string name="common_ui_deselect_all">Скасувати вибір усього</string>
     <string name="common_ui_on">Увімк.</string>
     <string name="common_ui_off">Вимк.</string>
     <string name="common_ui_already_set">Вже встановлено</string>
@@ -102,6 +104,26 @@
     <string name="common_ui_install">Встановити</string>
     <string name="common_ui_application">Застосунок</string>
     <string name="common_ui_check">Перевірити</string>
+    <string name="store_game_check_for_update">Перевірити оновлення</string>
+    <string name="store_game_checking_for_update">Перевірка...</string>
+    <string name="store_game_download_update">Завантажити оновлення</string>
+    <string name="store_game_no_update_available">Немає доступних оновлень</string>
+    <string name="store_game_update_available">Доступне оновлення</string>
+    <string name="store_game_update_check_failed">Не вдалося перевірити оновлення</string>
+    <string name="store_game_update">Оновити</string>
+    <string name="store_game_workshop">Workshop</string>
+    <string name="store_game_verify_files">Перевірити файли</string>
+    <string name="store_game_verify_started">Перевірка %1$s — дивіться вкладку Завантаження</string>
+    <string name="store_game_steam_options">Параметри Steam</string>
+    <string name="store_game_verify_complete">Перевірку файлів завершено</string>
+    <string name="store_game_verify_failed_notice">Не вдалося перевірити файли</string>
+    <string name="store_game_progress_background_hint">Це можна закрити — процес продовжить роботу. Перевіряйте вкладку Завантаження будь-коли.</string>
+    <string name="store_game_checking_updates">Перевірка оновлень…</string>
+    <string name="store_game_no_updates_notice">Оновлень немає</string>
+    <string name="store_game_update_complete">Оновлення завершено</string>
+    <string name="store_game_update_failed_notice">Не вдалося оновити</string>
+    <string name="store_game_update_check_failed_notice">Не вдалося перевірити оновлення</string>
+    <string name="store_game_download_already_active">Ця гра вже завантажується. Скасуйте поточне завантаження, перш ніж додавати DLC.</string>
     <string name="common_ui_select">Вибрати</string>
     <string name="common_ui_select_folder">Вибрати теку</string>
     <string name="common_ui_current_folder">Поточна тека</string>
@@ -141,6 +163,7 @@
     <string name="library_games_shortcut_created">Ярлик створено</string>
     <string name="library_games_failed_to_create_shortcut">Не вдалося створити ярлик: %s</string>
     <string name="library_games_install_path">Шлях встановлення</string>
+    <string name="library_games_not_enough_space">Потрібно ще %1$s місця</string>
     <string name="library_games_download_slash_install">Завантажити / Встановити</string>
     <string name="library_games_save_management">КЕРУВАННЯ ЗБЕРЕЖЕННЯМИ</string>
     <string name="library_games_download_install_available">%1$s / %2$s • Доступно: %3$s</string>
@@ -163,7 +186,7 @@
     <string name="library_games_no_games_hub">Ігор не встановлено\nНатисніть, щоб відкрити Winlator Backend</string>
     <string name="library_games_installed_badge">ВСТАНОВЛЕНО</string>
     <string name="library_games_unknown_game">Невідома гра</string>
-    <string name="library_games_layouts_header">МАКЕТИ</string>
+    <string name="library_games_layouts_header">МАКЕТИ БІБЛІОТЕКИ</string>
     <string name="library_games_layout_carousel">Карусель</string>
     <string name="library_games_layout_list">Список</string>
     <string name="library_games_custom_game">Користувацька гра</string>
@@ -225,6 +248,8 @@
     <string name="downloads_queue_phase_cancelled">Скасовано</string>
     <string name="downloads_queue_phase_failed">Помилка: %1$s</string>
     <string name="downloads_queue_cancel_download">Скасувати завантаження</string>
+    <string name="downloads_queue_cancel_download_title">Скасувати завантаження?</string>
+    <string name="downloads_queue_cancel_download_warning">Скасування завантаження DLC, гри або оновлення може пошкодити встановлену гру.\n\nВи впевнені, що хочете скасувати?</string>
     <string name="downloads_queue_empty">Немає активних завантажень.</string>
 
     <!-- Containers > List -->
@@ -259,13 +284,13 @@
     <string name="shortcuts_properties_exclusive_input">Ексклюзивне введення</string>
     <string name="shortcuts_properties_custom_game_settings">Користувацькі налаштування гри</string>
     <string name="shortcuts_properties_use_cold_client">Використовувати ColdClient Launcher</string>
-    <string name="shortcuts_properties_use_cold_client_description">ColdClient — це рекомендований спосіб обробки емуляції Steam та DRM. Він патчить DRM під час виконання без зміни файлів гри.</string>
+    <string name="shortcuts_properties_use_cold_client_description">Режим емуляції Steam для ігор Steam — обробляє DRM, досягнення та DLC. Рекомендовано для всіх ігор Steam.</string>
     <string name="shortcuts_properties_unpack_files">Застарілий DRM</string>
-    <string name="shortcuts_properties_unpack_files_description">Видаляє SteamStub DRM з exe на диску. Вмикайте лише якщо гра не запускається без цього. Патчер часу виконання ColdClient обробляє більшість ігор автоматично.</string>
+    <string name="shortcuts_properties_unpack_files_description">Видаляє SteamStub DRM з exe. Одноразова операція. Вимикайте лише якщо гра перестає працювати.</string>
     <string name="shortcuts_properties_force_dlc">Примусово увімкнути DLC</string>
-    <string name="shortcuts_properties_force_dlc_description">Увімкніть лише якщо DLC не виявлено або збереження з DLC не працюють</string>
+    <string name="shortcuts_properties_force_dlc_description">Увімкніть, якщо DLC не виявлено або збереження з DLC не працюють.</string>
     <string name="shortcuts_properties_launch_steam_client_beta">Запустити клієнт Steam (бета)</string>
-    <string name="shortcuts_properties_launch_steam_client_description">Запускає справжній клієнт Steam у Wine\nПотрібен обліковий запис Steam, може знизити продуктивність\nПрацює не з усіма іграми</string>
+    <string name="shortcuts_properties_launch_steam_client_description">Запускає справжній клієнт Steam у Wine. Потрібен обліковий запис. Може знизити продуктивність; працює не з усіма іграми.</string>
     <string name="shortcuts_properties_steam_type">Продуктивність клієнта Steam</string>
     <string name="steam_section_emulator">Емулятор Steam (Goldberg)</string>
     <string name="steam_section_real_client">Справжній клієнт Steam</string>
@@ -495,6 +520,7 @@
     <string name="container_graphics_bcn_emulation">Емуляція BCn</string>
     <string name="container_graphics_bcn_emulation_type">Тип емуляції BCn</string>
     <string name="container_graphics_bcn_emulation_cache">Кеш емуляції BCn</string>
+    <string name="shortcuts_graphics_sgsr_full_title">Snapdragon™ Суперроздільність для ігор 1</string>
     <!-- Container > Presets -->
     <string name="container_presets_confirm_duplicate">Ви хочете дублювати цей пресет?</string>
     <string name="container_presets_confirm_remove">Ви хочете видалити цей пресет?</string>
@@ -555,6 +581,8 @@
     <string name="session_drawer_exit_subtitle">Закрити поточну сесію</string>
     <string name="session_drawer_touchscreen_overlay">Сенсорне накладання</string>
     <string name="session_drawer_resume">Продовжити</string>
+    <string name="session_drawer_retry">Повторити</string>
+    <string name="downloads_no_internet">Немає підключення до інтернету</string>
     <string name="session_drawer_pause">Пауза</string>
     <string name="session_drawer_wine_processes_paused">Процеси Wine призупинені</string>
     <string name="session_drawer_pause_all_wine_processes">Призупинити всі процеси Wine</string>
@@ -764,6 +792,8 @@
     <string name="settings_debug_input_logs_description">Журналювати події геймпада, дотиків та клавіатури</string>
     <string name="settings_debug_download_logs">Журнали завантажень</string>
     <string name="settings_debug_download_logs_description">Журналювати події засобу розв\'язування завантажень та резервного механізму WinNative</string>
+    <string name="settings_debug_vulkan_validation_layers_title">Рівні перевірки Vulkan</string>
+    <string name="settings_debug_vulkan_validation_layers_subtitle">Перезапустіть дисплей, щоб застосувати.</string>
     <string name="settings_debug_share_logs">Поділитися журналами</string>
     <string name="settings_debug_logs_subject">Журнали WinNative (%1$s)</string>
     <string name="settings_debug_no_logs_available">Немає доступних журналів налагодження. Спочатку увімкніть параметри налагодження та запустіть гру.</string>
@@ -818,6 +848,11 @@
     <string name="settings_content_extracting_detail">Розпакування… (%1$d файлів)</string>
     <string name="settings_content_preparing_package">Підготовка пакета…</string>
     <string name="settings_content_download_complete">Завантаження завершено</string>
+    <string name="settings_content_already_installed_title">Компонент уже встановлено</string>
+    <string name="settings_content_already_installed_message">Цей компонент уже встановлено. Видаліть встановлену копію, перш ніж завантажувати його знову.
+
+Встановлений шлях:
+%1$s</string>
     <string name="settings_content_conflicting_title">Встановлено конфліктуючий контент</string>
     <string name="settings_content_conflicting_message">Будь ласка, видаліть конфліктуючий контент перед завантаженням цього пакета.
 
@@ -990,9 +1025,7 @@
     <string name="preloader_downloading_cloud">Завантаження хмарних збережень…</string>
     <string name="preloader_syncing_cloud">Синхронізація хмарних збережень…</string>
     <string name="preloader_cloud_downloading">Завантаження Cloud Sync…</string>
-    <string name="preloader_cloud_backup">Резервне копіювання на Google Диск…</string>
     <string name="cloud_sync_failed_provider">Хмарна синхронізація %1$s не вдалася.</string>
-    <string name="google_cloud_backup_failed">Резервне копіювання на Google Диск не вдалося.</string>
     <string name="preloader_platform_steam">Steam</string>
     <string name="preloader_platform_epic">Epic Games</string>
     <string name="preloader_platform_gog">GOG</string>
@@ -1000,13 +1033,6 @@
 
     <!-- Missing translations -->
     <string name="common_ui_graphics">Графіка</string>
-    <string name="container_backups_title">Резервні копії</string>
-    <string name="container_backups_prompt">Виберіть дію для цієї резервної копії контейнера.</string>
-    <string name="container_backups_backing_up">Створення резервної копії контейнера…</string>
-    <string name="container_backups_restoring">Відновлення контейнера…</string>
-    <string name="container_backups_checking">Перевірка резервних копій контейнера…</string>
-    <string name="container_backups_select_title">Виберіть резервну копію для відновлення</string>
-    <string name="container_backups_no_files">У Google Drive не знайдено резервних копій контейнера.</string>
     <string name="steam_section_title">Steam</string>
     <string name="binding_secondary">Вторинне призначення</string>
     <string name="input_controls_editor_tap_to_switch">Торкніться, щоб перемкнути</string>
@@ -1016,6 +1042,7 @@
     <string name="session_drawer_fps_monitor">Монітор FPS</string>
     <string name="session_drawer_fps_monitor_subtitle">Показувати статистику продуктивності в реальному часі</string>
     <string name="session_drawer_dual_series_battery">Батарея Dual Series</string>
+    <string name="session_drawer_hud_frametime_numeric">Показувати час кадру як число</string>
     <string name="session_drawer_command_center">Центр керування</string>
     <string name="session_drawer_command_center_input">Ввід</string>
     <string name="session_drawer_command_center_display">Дисплей</string>
@@ -1028,7 +1055,6 @@
     <string name="session_drawer_color_profile_hdr">HDR</string>
     <string name="session_drawer_color_profile_natural">Природний</string>
     <string name="session_drawer_color_profile_crt">Ефект CRT</string>
-    <string name="session_drawer_upscaler_dls">Яскравий</string>
     <string name="session_drawer_calibrate_advanced">Розширене калібрування</string>
     <string name="session_drawer_rail_label_hud">HUD</string>
     <string name="session_drawer_rail_label_gyro">Гіро</string>
@@ -1054,19 +1080,17 @@
     <string name="session_drawer_logs_share_chooser">Поділитися логами сеансу</string>
     <string name="session_drawer_logs_share_failed">Не вдалося поділитися логами</string>
     <string name="session_drawer_logs_share_empty">Немає рядків логу для надсилання</string>
-    <string name="session_drawer_super_resolution">Фільтри Чіткості</string>
-    <string name="session_drawer_upscaler_mode">Фільтр</string>
-    <string name="session_drawer_upscaler_fsr">FSR 1</string>
+    <string name="session_drawer_super_resolution">Суперроздільність</string>
+    <string name="session_drawer_upscaler_mode">Апскейлер</string>
+    <string name="session_drawer_upscaler_fsr">SGSR 1</string>
+    <string name="session_drawer_vivid">Яскравий</string>
+    <string name="session_drawer_vivid_strength">Інтенсивність яскравості</string>
     <string name="session_drawer_main_menu_title">Меню</string>
     <string name="session_gyroscope_activator">Активатор</string>
     <string name="settings_general_check_for_updates">Перевірити оновлення</string>
     <string name="settings_general_check_for_updates_summary">Автоматично перевіряти нові версії застосунку під час запуску та періодично.</string>
     <string name="setup_wizard_containers">Налаштування контейнера</string>
-    <string name="google_cloud_auto_backup">Автоматичне резервне копіювання Cloud Sync</string>
-    <string name="google_cloud_auto_backup_summary">Автоматично створювати резервні копії збережень гри в Google Drive щоразу після виходу з гри.</string>
     <string name="cloud_saves_title">Хмарні збереження</string>
-    <string name="cloud_saves_backup">Створити резервну копію хмарного збереження</string>
-    <string name="cloud_saves_restore">Відновити хмарне збереження</string>
     <string name="cloud_sync_title">Хмарна синхронізація</string>
     <string name="cloud_sync_enabled_summary">Завантажувати хмарні збереження під час запуску та синхронізувати/резервувати їх під час виходу.</string>
     <string name="cloud_sync_disabled_summary">Запустити цю гру без завантаження хмарних збережень і синхронізації при виході.</string>
@@ -1092,4 +1116,130 @@
     <string name="fexcore_env_var_help__kernelunalignedatomicbackpatching">Backpatches kernel-handled unaligned atomics to reduce kernel context switches.</string>
     <string name="fexcore_env_var_help__maxinst">Maximum number of instructions stored in a compiled block.</string>
     <string name="fexcore_env_var_help__strictinprocesssplitlocks">Uses a strict process-wide lock for split unaligned atomic accesses.</string>
+    <!-- Translated batch (110 strings) -->
+    <string name="cloud_saves_history_empty">Попередніх збережень ще немає. Замінені збереження та ручні резервні копії з\'являтимуться тут протягом 30 днів.</string>
+    <string name="cloud_saves_history_loading">Завантаження історії збережень\u2026</string>
+    <string name="cloud_saves_history_origin_auto">авто</string>
+    <string name="cloud_saves_history_origin_cloud">хмара</string>
+    <string name="cloud_saves_history_origin_local">локально</string>
+    <string name="cloud_saves_history_origin_manual">вручну</string>
+    <string name="cloud_saves_history_refresh">Оновити</string>
+    <string name="cloud_saves_history_rename">Перейменувати</string>
+    <string name="cloud_saves_history_rename_clear">Очистити</string>
+    <string name="cloud_saves_history_rename_failed">Не вдалося перейменувати резервну копію.</string>
+    <string name="cloud_saves_history_rename_hint">напр. Бій з босом, Перед фіналом</string>
+    <string name="cloud_saves_history_rename_save">Зберегти</string>
+    <string name="cloud_saves_history_rename_success">Резервну копію перейменовано.</string>
+    <string name="cloud_saves_history_rename_title">Назвіть цю резервну копію</string>
+    <string name="cloud_saves_history_restore">Відновити</string>
+    <string name="cloud_saves_history_restore_confirm_body">Це замінить ваше поточне локальне збереження резервною копією від %1$s.</string>
+    <string name="cloud_saves_history_restore_confirm_title">Відновити цю резервну копію?</string>
+    <string name="cloud_saves_history_restore_failed">Не вдалося відновити цю резервну копію.</string>
+    <string name="cloud_saves_history_restore_success">Збереження відновлено з резервної копії.</string>
+    <string name="cloud_saves_history_sign_in">Увійдіть у Google, щоб переглянути історію збережень.</string>
+    <string name="cloud_saves_history_title">Історія збережень</string>
+    <string name="cloud_saves_keep_replaced_backup">Зберігати резервну копію замінених збережень</string>
+    <string name="cloud_saves_keep_replaced_backup_summary">Якщо передумаєте, можна відновити їх з Історії збережень.</string>
+    <string name="cloud_saves_no_backups">Для цієї гри ще немає резервних копій.</string>
+    <string name="cloud_saves_offline_mode">Вимкнути хмарну синхронізацію</string>
+    <string name="cloud_saves_offline_mode_summary">Вимикає будь-яку автоматичну хмарну активність для цієї гри.</string>
+    <string name="cloud_saves_sync_from_provider">Синхронізувати з %1$s Cloud</string>
+    <string name="cloud_saves_sync_from_provider_failed">Не вдалося завантажити збереження від %1$s.</string>
+    <string name="cloud_saves_sync_from_provider_generic">Синхронізувати з хмари</string>
+    <string name="cloud_saves_sync_from_provider_success">Хмарне збереження %1$s завантажено.</string>
+    <string name="cloud_saves_syncing_from_provider">Завантаження збереження від %1$s\u2026</string>
+    <string name="cloud_saves_sync_summary">Отримати версію, яка зараз є у %1$s.</string>
+    <string name="cloud_saves_sync_summary_generic">Отримати поточну хмарну версію.</string>
+    <string name="common_ui_exit_app_confirm">Вийти з WinNative?</string>
+    <string name="container_surface_effect">Ефект поверхні</string>
+    <string name="downloads_queue_cancel_download_confirm">Скасувати завантаження %1$s і видалити всі завантажені файли?</string>
+    <string name="downloads_queue_paused_resume_hint">Призупинено — натисніть «Продовжити» для відновлення</string>
+    <string name="downloads_queue_phase_applying_data">Застосування даних…</string>
+    <string name="downloads_queue_phase_downloading">Завантаження…</string>
+    <string name="downloads_queue_phase_downloading_file">Завантаження… [%1$s]</string>
+    <string name="downloads_queue_phase_finalizing">Завершення…</string>
+    <string name="downloads_queue_phase_patching">Патчинг…</string>
+    <string name="downloads_queue_phase_preparing">Підготовка…</string>
+    <string name="downloads_queue_phase_queued">У черзі</string>
+    <string name="downloads_queue_phase_unknown">Невідомо</string>
+    <string name="downloads_queue_phase_unpacking">Розпакування…</string>
+    <string name="downloads_queue_phase_updating">Оновлення…</string>
+    <string name="downloads_queue_phase_verifying">Перевірка…</string>
+    <string name="downloads_queue_phase_verifying_file">Перевірка… [%1$s]</string>
+    <string name="downloads_queue_status_label">Статус:</string>
+    <string name="downloads_queue_this_game">цю гру</string>
+    <string name="hud_position_bottom_center">Знизу по центру</string>
+    <string name="hud_position_bottom_left">Знизу ліворуч</string>
+    <string name="hud_position_bottom_right">Знизу праворуч</string>
+    <string name="hud_position_left_center">Ліворуч по центру</string>
+    <string name="hud_position_menu_title">Перемістити HUD до</string>
+    <string name="hud_position_right_center">Праворуч по центру</string>
+    <string name="hud_position_top_center">Угорі по центру</string>
+    <string name="hud_position_top_left">Угорі ліворуч</string>
+    <string name="hud_position_top_right">Угорі праворуч</string>
+    <string name="input_controls_editor_number_of_bindings">Кількість прив\'язок</string>
+    <string name="input_controls_editor_opacity">Непрозорість</string>
+    <string name="input_controls_editor_radial_menu">Радіальне меню</string>
+    <string name="input_controls_editor_radial_menu_options">Параметри радіального меню</string>
+    <string name="input_controls_tap_to_click">Торкання для кліку</string>
+    <string name="num_controllers">Кількість контролерів</string>
+    <string name="session_drawer_controls_section">Керування</string>
+    <string name="session_drawer_header_subtitle">Швидкий доступ до керування, накладень та інструментів сесії</string>
+    <string name="session_drawer_hud_alpha">Alpha</string>
+    <string name="session_drawer_hud_alpha_input_title">Встановити Alpha</string>
+    <string name="session_drawer_hud_disabled_hint">Увімкніть накладення, щоб налаштувати його</string>
+    <string name="session_drawer_hud_elements">Елементи HUD</string>
+    <string name="session_drawer_hud_input_hint">Введіть значення від %1$d до %2$d. Значення вище ліміту обрізаються.</string>
+    <string name="session_drawer_hud_scale">Масштаб</string>
+    <string name="session_drawer_hud_scale_input_title">Встановити масштаб</string>
+    <string name="session_drawer_hud_summary">Налаштуйте видимість накладення та відображувані дані</string>
+    <string name="session_drawer_screen_effects">Ефекти екрана</string>
+    <string name="session_drawer_session_section">Сесія</string>
+    <string name="session_drawer_swipe_hint">Проведіть убік, щоб повернутися до гри</string>
+    <string name="session_gamepad_enable_vibration">Увімкнути вібрацію</string>
+    <string name="session_gyroscope_experimental_mouse_movement">Експериментальний рух миші</string>
+    <string name="session_gyroscope_mouse_scale">Масштаб миші</string>
+    <string name="session_gyroscope_mouse_sensitivity_format">Масштаб миші: %1$d%%</string>
+    <string name="settings_other_setup_wizard_summary">Відкрийте майстер налаштування знову, щоб перевірити дозволи, системні файли та стандартні контейнери.</string>
+    <string name="settings_other_setup_wizard_title">Майстер налаштування</string>
+    <string name="shortcuts_library_artwork_carousel_title">Зображення каруселі</string>
+    <string name="shortcuts_library_artwork_change">Змінити зображення</string>
+    <string name="shortcuts_library_artwork_failed">Не вдалося завантажити вибране зображення.</string>
+    <string name="shortcuts_library_artwork_game_card_title">Зображення картки гри</string>
+    <string name="shortcuts_library_artwork_grid_title">Зображення сітки</string>
+    <string name="shortcuts_library_artwork_list_title">Зображення списку</string>
+    <string name="shortcuts_library_artwork_open_source">Відкрити SteamGridDB</string>
+    <string name="shortcuts_library_artwork_selected">Вибрано: %1$s</string>
+    <string name="shortcuts_library_artwork_set">Встановити зображення</string>
+    <string name="shortcuts_library_artwork_title">Зображення бібліотеки</string>
+    <string name="shortcuts_list_readded_existing">Повторно додано наявний ярлик</string>
+    <string name="shortcuts_properties_runtime_patcher">Runtime DRM Patcher</string>
+    <string name="shortcuts_properties_runtime_patcher_description">Вставляє DLL DRM-патчера під час запуску. Знижує FPS — використовуйте лише якщо Unpack Files сам не допомагає.</string>
+    <!-- Cloud Saves > Custom save folder picker -->
+    <string name="cloud_saves_custom_select_folder">Вибрати папку збережень</string>
+    <string name="cloud_saves_custom_folder_label">Папка збережень</string>
+    <string name="cloud_saves_custom_select_folder_summary">Укажіть каталог збережень усередині контейнера</string>
+    <string name="cloud_saves_custom_no_container">Контейнер недоступний для цього ярлика</string>
+    <string name="cloud_saves_custom_picker_title">Вибрати папку збережень</string>
+    <string name="cloud_saves_custom_outside_drive_c">Вибрана папка має бути всередині диска C: контейнера</string>
+    <string name="cloud_saves_custom_path_map_failed">Не вдалося зіставити вибрану папку зі шляхом Windows.</string>
+    <string name="cloud_saves_custom_folder_set">Папку збережень установлено на %1$s</string>
+
+    <!-- Cloud Saves > Steam Cloud actions -->
+    <string name="cloud_saves_steam_sync_label">Синхронізувати зі Steam Cloud</string>
+    <string name="cloud_saves_steam_sync_helper">Завантажити найновіше збереження</string>
+    <string name="cloud_saves_steam_sync_success">Синхронізовано зі Steam Cloud</string>
+    <string name="cloud_saves_steam_sync_failed">Помилка синхронізації Steam Cloud</string>
+    <string name="cloud_saves_steam_browse_label">Переглянути Steam</string>
+    <string name="cloud_saves_steam_browse_helper">Відкрити хмарне сховище</string>
+    <string name="cloud_saves_steam_browse_no_browser">Немає доступного браузера, щоб відкрити сторінку Steam</string>
+    <string name="cloud_saves_steam_import_label">Імпортувати файли</string>
+    <string name="cloud_saves_steam_import_helper">Відновити завантажені файли</string>
+    <string name="cloud_saves_steam_import_picker_unavailable">Вибір файлів недоступний</string>
+    <string name="cloud_saves_steam_restore_overwrite_body">Це завантажить поточні файли збережень зі Steam Cloud і перезапише поточні файли збережень.</string>
+
+    <!-- Cloud Saves > Internal result messages -->
+    <string name="cloud_saves_invalid_app_id">Недійсний ID застосунку</string>
+    <string name="cloud_saves_label_saved">Мітку збережено</string>
 </resources>
+

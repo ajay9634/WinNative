@@ -27,8 +27,11 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Set;
 import androidx.preference.PreferenceManager;
 import com.winlator.cmod.R;
+import com.winlator.cmod.runtime.display.XServerDisplayActivity;
 import com.winlator.cmod.runtime.display.winhandler.MouseEventFlags;
 import com.winlator.cmod.runtime.display.winhandler.WinHandler;
 import com.winlator.cmod.runtime.display.xserver.Pointer;
@@ -39,6 +42,9 @@ import com.winlator.cmod.runtime.input.controls.ControlsProfile;
 import com.winlator.cmod.runtime.input.controls.ExternalController;
 import com.winlator.cmod.runtime.input.controls.ExternalControllerBinding;
 import com.winlator.cmod.runtime.input.controls.GamepadState;
+import com.winlator.cmod.runtime.input.controls.InputControlsManager;
+import com.winlator.cmod.runtime.input.controls.LabelTheme;
+import com.winlator.cmod.runtime.input.controls.VisualStyle;
 import com.winlator.cmod.shared.math.Mathf;
 import java.io.IOException;
 import java.io.InputStream;
@@ -69,6 +75,9 @@ public class InputControlsView extends View {
   private volatile float mouseMoveOffsetX = 0f;
   private volatile float mouseMoveOffsetY = 0f;
   private boolean showTouchscreenControls = false;
+  private VisualStyle visualStyle = VisualStyle.ORIGINAL;
+  private LabelTheme labelTheme = LabelTheme.DEFAULT;
+  private InputControlsManager inputControlsManager;
 
   private Handler timeoutHandler; // Reference to the activity's timeout handler
   private Runnable hideControlsRunnable; // Runnable to hide the controls
@@ -80,6 +89,12 @@ public class InputControlsView extends View {
 
   private boolean focusOnStick = false; // A flag to determine if we are focusing on the stick
 
+  private boolean batchingUpdates = false;
+
+  public boolean isBatchingUpdates() {
+    return batchingUpdates;
+  }
+
   public boolean isFocusedOnStick() {
     return focusOnStick;
   }
@@ -87,6 +102,10 @@ public class InputControlsView extends View {
   public void setFocusOnStick(boolean focus) {
     this.focusOnStick = focus;
     invalidate(); // Redraw the view with the new focus setting
+  }
+
+  public void setInputControlsManager(InputControlsManager inputControlsManager) {
+    this.inputControlsManager = inputControlsManager;
   }
 
   @SuppressLint("ResourceType")
@@ -161,6 +180,34 @@ public class InputControlsView extends View {
 
   public float getOverlayOpacity() {
     return overlayOpacity;
+  }
+
+  public VisualStyle getVisualStyle() {
+    return visualStyle;
+  }
+
+  public void setVisualStyle(VisualStyle style) {
+    this.visualStyle = style != null ? style : VisualStyle.ORIGINAL;
+    invalidate();
+  }
+
+  /** Same as {@link #setVisualStyle} but without {@link #invalidate()}, for internal draw-time
+   * fallbacks where requesting another redraw would loop. */
+  public void setVisualStyleSilent(VisualStyle style) {
+    this.visualStyle = style != null ? style : VisualStyle.ORIGINAL;
+  }
+
+  public LabelTheme getLabelTheme() {
+    return labelTheme;
+  }
+
+  public InputControlsManager getInputControlsManager() {
+    return inputControlsManager;
+  }
+
+  public void setLabelTheme(LabelTheme theme) {
+    this.labelTheme = theme != null ? theme : LabelTheme.DEFAULT;
+    invalidate();
   }
 
   public int getSnappingSize() {
@@ -446,6 +493,7 @@ public class InputControlsView extends View {
   }
 
   private void createMouseMoveTimer() {
+    if (xServer == null) return;
     WinHandler winHandler = xServer.getWinHandler();
     if (mouseMoveTimer == null && profile != null) {
       final float cursorSpeed = profile.getCursorSpeed();
@@ -454,17 +502,16 @@ public class InputControlsView extends View {
           new TimerTask() {
             @Override
             public void run() {
-              if (mouseMoveOffsetX != 0 || mouseMoveOffsetY != 0) {
-                if (xServer.isRelativeMouseMovement())
-                  winHandler.mouseEvent(
-                      MouseEventFlags.MOVE,
-                      (int) (mouseMoveOffsetX * cursorSpeed * 20),
-                      (int) (mouseMoveOffsetY * cursorSpeed * 20),
-                      0);
-                else
-                  xServer.injectPointerMoveDelta(
-                      (int) (mouseMoveOffsetX * cursorSpeed * 20),
-                      (int) (mouseMoveOffsetY * cursorSpeed * 20));
+              if (getContext() instanceof XServerDisplayActivity && ((XServerDisplayActivity)getContext()).isInputSuspended()) return;
+              if (mouseMoveOffsetX != 0 || mouseMoveOffsetY != 0) {                int dx = (int) (mouseMoveOffsetX * cursorSpeed * 20);
+                int dy = (int) (mouseMoveOffsetY * cursorSpeed * 20);
+                if (xServer.isRelativeMouseMovement()) {
+                  xServer.updatePointerForDisplayDelta(dx, dy);
+                  winHandler.mouseMoveDelta(dx, dy);
+                } else {
+                  xServer.injectPointerMoveDelta(dx, dy);
+                }
+                if (xServer.getRenderer() != null) xServer.getRenderer().requestRenderCoalesced();
               }
             }
           },
@@ -566,6 +613,7 @@ public class InputControlsView extends View {
     WinHandler winHandler = xServer != null ? xServer.getWinHandler() : null;
     if (winHandler != null) {
       winHandler.sendGamepadState(controller);
+      if (xServer != null && xServer.getRenderer() != null) xServer.getRenderer().requestRenderCoalesced();
     }
   }
 
@@ -642,8 +690,9 @@ public class InputControlsView extends View {
 
   @Override
   public boolean onTouchEvent(MotionEvent event) {
+    if (getContext() instanceof XServerDisplayActivity && ((XServerDisplayActivity)getContext()).isInputSuspended()) return true;
 
-    boolean hapticsEnabled = preferences.getBoolean("touchscreen_haptics_enabled", true);
+    boolean hapticsEnabled = preferences.getBoolean("touchscreen_haptics_enabled", false);
 
     if (editMode && readyToDraw) {
       switch (event.getAction()) {
@@ -694,7 +743,7 @@ public class InputControlsView extends View {
       int actionIndex = event.getActionIndex();
       int pointerId = event.getPointerId(actionIndex);
       int actionMasked = event.getActionMasked();
-      boolean handled = false;
+      boolean eventHandled = false;
 
       switch (actionMasked) {
         case MotionEvent.ACTION_DOWN:
@@ -703,85 +752,131 @@ public class InputControlsView extends View {
             float x = event.getX(actionIndex);
             float y = event.getY(actionIndex);
 
-            for (ControlElement element : profile.getElements()) {
-              if (element.handleTouchDown(pointerId, x, y)) {
-                handled = true;
-                activeTouchElements.put(pointerId, element);
+            if (stickElement != null && stickElement.handleTouchDown(pointerId, x, y)) {
+              eventHandled = true;
+              activeTouchElements.put(pointerId, stickElement);
+            }
 
-                // Trigger haptic feedback for input controls
-                if (hapticsEnabled) {
-                  Vibrator vibrator;
-                  if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
-                    VibratorManager vibratorManager =
-                        getContext().getSystemService(VibratorManager.class);
-                    vibrator =
-                        vibratorManager != null ? vibratorManager.getDefaultVibrator() : null;
-                  } else {
-                    vibrator = getContext().getSystemService(Vibrator.class);
+            if (!eventHandled) {
+              for (ControlElement element : profile.getElements()) {
+                if (element.handleTouchDown(pointerId, x, y)) {
+                  eventHandled = true;
+                  activeTouchElements.put(pointerId, element);
+
+                  // Trigger haptic feedback for input controls
+                  if (hapticsEnabled) {
+                    Vibrator vibrator;
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                      VibratorManager vibratorManager =
+                          getContext().getSystemService(VibratorManager.class);
+                      vibrator =
+                          vibratorManager != null ? vibratorManager.getDefaultVibrator() : null;
+                    } else {
+                      vibrator = getContext().getSystemService(Vibrator.class);
+                    }
+                    if (vibrator != null && vibrator.hasVibrator()) {
+                      vibrator.vibrate(
+                          VibrationEffect.createOneShot(50, VibrationEffect.DEFAULT_AMPLITUDE));
+                    }
                   }
-                  if (vibrator != null && vibrator.hasVibrator()) {
-                    vibrator.vibrate(
-                        VibrationEffect.createOneShot(50, VibrationEffect.DEFAULT_AMPLITUDE));
-                  }
+                  break;
                 }
-                break;
               }
             }
-            if (!handled) dispatchUnhandledTouch(event);
+            syncCapturedPointers();
+            if (!eventHandled) dispatchUnhandledTouch(event);
             break;
           }
         case MotionEvent.ACTION_MOVE:
           {
+            batchingUpdates = true;
+            boolean anyControlHandled = false;
+            boolean unhandledPointerExists = false;
+
             for (byte i = 0, count = (byte) event.getPointerCount(); i < count; i++) {
               int movePointerId = event.getPointerId(i);
               float x = event.getX(i);
               float y = event.getY(i);
 
               ControlElement activeElement = activeTouchElements.get(movePointerId);
-              handled = activeElement != null && activeElement.handleTouchMove(movePointerId, x, y);
+              boolean pointerHandled =
+                  activeElement != null && activeElement.handleTouchMove(movePointerId, x, y);
 
-              if (!handled && activeElement == null) {
-                for (ControlElement element : profile.getElements()) {
-                  if (element.handleTouchMove(movePointerId, x, y)) {
-                    activeTouchElements.put(movePointerId, element);
-                    handled = true;
-                    break;
+              if (!pointerHandled && activeElement == null) {
+                if (stickElement != null && stickElement.handleTouchMove(movePointerId, x, y)) {
+                  activeTouchElements.put(movePointerId, stickElement);
+                  pointerHandled = true;
+                }
+
+                if (!pointerHandled) {
+                  for (ControlElement element : profile.getElements()) {
+                    if (element.handleTouchMove(movePointerId, x, y)) {
+                      activeTouchElements.put(movePointerId, element);
+                      pointerHandled = true;
+                      break;
+                    }
                   }
                 }
               }
-              if (!handled) dispatchUnhandledTouch(event);
+
+              if (pointerHandled) anyControlHandled = true;
+              else unhandledPointerExists = true;
             }
+
+            batchingUpdates = false;
+            WinHandler winHandler = xServer != null ? xServer.getWinHandler() : null;
+            if (anyControlHandled && winHandler != null) {
+              winHandler.sendGamepadState();
+            }
+
+            syncCapturedPointers();
+            if (unhandledPointerExists) dispatchUnhandledTouch(event);
             break;
-          }
-        case MotionEvent.ACTION_UP:
+            }        case MotionEvent.ACTION_UP:
         case MotionEvent.ACTION_POINTER_UP:
           {
             ControlElement activeElement = activeTouchElements.get(pointerId);
             float x = event.getX(actionIndex);
             float y = event.getY(actionIndex);
             if (activeElement != null) {
-              handled = activeElement.handleTouchUp(pointerId, x, y);
+              eventHandled = activeElement.handleTouchUp(pointerId, x, y);
               activeTouchElements.remove(pointerId);
             } else {
-              for (ControlElement element : profile.getElements()) {
-                if (element.handleTouchUp(pointerId, x, y)) {
-                  handled = true;
-                  break;
+              if (stickElement != null && stickElement.handleTouchUp(pointerId, x, y)) {
+                eventHandled = true;
+              }
+
+              if (!eventHandled) {
+                for (ControlElement element : profile.getElements()) {
+                  if (element.handleTouchUp(pointerId, x, y)) {
+                    eventHandled = true;
+                    break;
+                  }
                 }
               }
             }
-            if (!handled) dispatchUnhandledTouch(event);
+            syncCapturedPointers();
+            if (!eventHandled) dispatchUnhandledTouch(event);
             break;
           }
         case MotionEvent.ACTION_CANCEL:
           {
             releaseActiveTouchElements();
             dispatchUnhandledTouch(event);
+            syncCapturedPointers();
             break;
           }
       }
     }
     return true;
+  }
+
+  private void syncCapturedPointers() {
+    if (touchpadView != null) {
+      Set<Integer> pointerIds = new HashSet<>();
+      for (int i = 0; i < activeTouchElements.size(); i++) pointerIds.add(activeTouchElements.keyAt(i));
+      touchpadView.setPointerIdsToIgnore(pointerIds);
+    }
   }
 
   public void invalidateControlElement(ControlElement element) {
@@ -797,6 +892,7 @@ public class InputControlsView extends View {
   }
 
   public boolean onKeyEvent(KeyEvent event) {
+    if (getContext() instanceof XServerDisplayActivity && ((XServerDisplayActivity)getContext()).isInputSuspended()) return false;
     if (profile != null && event.getRepeatCount() == 0) {
       ExternalController controller = profile.getController(event.getDeviceId());
       if (controller != null) {
@@ -826,11 +922,12 @@ public class InputControlsView extends View {
     handleInputEvent(controller, binding, isActionDown, 0);
   }
 
-  /**
-   * Updates both stick axes together so analog motion is dispatched as one coherent state update
-   * instead of four competing per-direction writes.
-   */
   public void handleStickInput(Binding firstBinding, float deltaX, float deltaY) {
+    handleStickInput(firstBinding, deltaX, deltaY, !batchingUpdates);
+  }
+
+  public void handleStickInput(
+      Binding firstBinding, float deltaX, float deltaY, boolean sendUpdate) {
     if (profile == null || !firstBinding.isGamepad()) return;
 
     GamepadState state = profile.getGamepadState();
@@ -850,8 +947,9 @@ public class InputControlsView extends View {
       state.thumbRY = deltaY;
     }
 
-    if (winHandler != null) {
+    if (winHandler != null && sendUpdate) {
       winHandler.sendGamepadState();
+      if (xServer != null && xServer.getRenderer() != null) xServer.getRenderer().requestRenderCoalesced();
     }
   }
 
@@ -861,7 +959,7 @@ public class InputControlsView extends View {
 
   public void handleInputEvent(
       ExternalController controller, Binding binding, boolean isActionDown, float offset) {
-    handleInputEvent(controller, binding, isActionDown, offset, true);
+    handleInputEvent(controller, binding, isActionDown, offset, !batchingUpdates);
   }
 
   public void handleInputEvent(
@@ -929,6 +1027,7 @@ public class InputControlsView extends View {
       if (winHandler != null && sendUpdate && stateChanged) {
         if (controller != null) winHandler.sendGamepadState(controller);
         else winHandler.sendGamepadState();
+        if (xServer != null && xServer.getRenderer() != null) xServer.getRenderer().requestRenderCoalesced();
       }
     } else {
       if (binding == Binding.MOUSE_MOVE_LEFT || binding == Binding.MOUSE_MOVE_RIGHT) {
@@ -945,26 +1044,11 @@ public class InputControlsView extends View {
         Pointer.Button pointerButton = binding.getPointerButton();
         if (isActionDown) {
           if (pointerButton != null) {
-            if (xServer.isRelativeMouseMovement()) {
-              int wheelDelta =
-                  pointerButton == Pointer.Button.BUTTON_SCROLL_UP
-                      ? MOUSE_WHEEL_DELTA
-                      : (pointerButton == Pointer.Button.BUTTON_SCROLL_DOWN
-                          ? -MOUSE_WHEEL_DELTA
-                          : 0);
-              winHandler.mouseEvent(
-                  MouseEventFlags.getFlagFor(pointerButton, true), 0, 0, wheelDelta);
-            } else {
-              xServer.injectPointerButtonPress(pointerButton);
-            }
+            xServer.injectPointerButtonPress(pointerButton);
           } else xServer.injectKeyPress(binding.keycode);
         } else {
           if (pointerButton != null) {
-            if (xServer.isRelativeMouseMovement()) {
-              winHandler.mouseEvent(MouseEventFlags.getFlagFor(pointerButton, false), 0, 0, 0);
-            } else {
-              xServer.injectPointerButtonRelease(pointerButton);
-            }
+            xServer.injectPointerButtonRelease(pointerButton);
           } else xServer.injectKeyRelease(binding.keycode);
         }
       }
