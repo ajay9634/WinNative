@@ -187,6 +187,11 @@
     <string name="library_games_layouts_header">LIBRARY LAYOUTS</string>
     <string name="library_games_layout_carousel">Carousel</string>
     <string name="library_games_layout_list">List</string>
+    <string name="library_games_view_options_header">VIEW OPTIONS</string>
+    <string name="library_games_immersive_mode">Immersive Mode</string>
+    <string name="library_games_immersive_mode_description">Use focused game art as background</string>
+    <string name="library_games_immersive_blur">Blur Background</string>
+    <string name="library_games_immersive_blur_description">Apply a blur effect to the immersive background</string>
     <string name="library_games_custom_game">Custom Game</string>
     <string name="library_games_play">Play</string>
     <string name="library_games_add_custom_game">Add Custom Game</string>
@@ -1166,6 +1171,14 @@ Installed path:
     <string name="cloud_saves_syncing_from_provider">Downloading save from %1$s\u2026</string>
     <string name="cloud_saves_sync_from_provider_success">%1$s cloud save downloaded.</string>
     <string name="cloud_saves_sync_from_provider_failed">Could not download save from %1$s.</string>
+    <string name="cloud_saves_gog_manage_label">Manage GOG Cloud Saves</string>
+    <string name="cloud_saves_gog_manage_helper">Opens the Official GOG Website</string>
+    <string name="cloud_saves_gog_manage_no_browser">No browser available to open the GOG cloud saves page</string>
+    <string name="cloud_saves_gog_zip_label">Download GOG Cloud Zip</string>
+    <string name="cloud_saves_gog_zip_helper">Save current cloud files</string>
+    <string name="cloud_saves_gog_zip_success">GOG cloud saves zip saved.</string>
+    <string name="cloud_saves_gog_zip_failed">Could not save GOG cloud saves zip.</string>
+    <string name="cloud_saves_gog_zip_empty">No GOG cloud save files found.</string>
     <string name="cloud_saves_history_title">Save History</string>
     <string name="cloud_saves_history_empty">No previous saves backed up yet. Replaced saves and manual backups will appear here for 30 days.</string>
     <string name="cloud_saves_history_loading">Loading save history\u2026</string>
@@ -1234,11 +1247,15 @@ Installed path:
     <string name="preloader_launching">Launching…</string>
     <string name="preloader_closing">Closing %1$s…</string>
     <string name="preloader_setup_environment">Setting up environment…</string>
+    <string name="preloader_retrying_steam_client_download">Retrying Steam client download…</string>
     <string name="preloader_installing_mono">Installing Wine Mono v%1$s…</string>
     <string name="preloader_installing_redist">Installing redistributables…</string>
     <string name="preloader_unpacking_exe">Unpacking game executable…</string>
     <string name="preloader_downloading_cloud">Downloading cloud saves…</string>
     <string name="preloader_syncing_cloud">Syncing cloud saves…</string>
+    <string name="preloader_uploading_cloud">Uploading cloud saves…</string>
+    <string name="preloader_checking_cloud">Checking cloud saves…</string>
+    <string name="preloader_cloud_sync_retry">%1$s Retry %2$d/%3$d…</string>
     <string name="preloader_cloud_downloading">Cloud Sync Downloading…</string>
     <string name="cloud_sync_failed_provider">%1$s cloud save sync failed.</string>
     <string name="preloader_platform_steam">Steam</string>
@@ -1250,4 +1267,11 @@ Installed path:
     <string name="settings_hud_record_to_file_title">Record performance to file</string>
     <string name="settings_hud_record_to_file_summary">Write per-second FPS, CPU, GPU, temperature, and battery metrics to /WinNative/logs/ during gameplay.</string>
     <string name="settings_leaderboard_category">Performance</string>
+    <string name="saves_import_warning_title">Warning: This will Overwrite all saves in this container.</string>
+    <string name="saves_import_warning_body">If restoring to a pervious save and you have multiple games it\'s recommended to manually copy the newer saves to this zip file in your file manager</string>
+    <string name="saves_export_path_summary">Saves will be exported to /WinNative/saves</string>
+    <string name="saves_export_success_path">Exported to %1$s</string>
+    <string name="saves_export_warning_title">Warning: This feature should only be used for Custom games.</string>
+    <string name="saves_export_warning_body">It is possible to effect other Store and Cloud Save games.</string>
+    <string name="common_ui_exporting">Exporting…</string>
 </resources>

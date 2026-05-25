@@ -126,16 +126,17 @@ internal fun LibraryGameLaunchScreen(
     installSizeText: String?,
     isCustom: Boolean,
     hasPinnedShortcut: Boolean,
-    showSavesAction: Boolean,
     steamMenuEnabled: Boolean = false,
     areSteamActionsEnabled: Boolean = true,
+    showVerifyFiles: Boolean = true,
+    showCheckForUpdate: Boolean = true,
+    showWorkshop: Boolean = true,
     playEnabled: Boolean = true,
     playDisabledLabel: String? = null,
     onBack: () -> Unit,
     onPlay: () -> Unit,
     onSettings: () -> Unit,
     onShortcut: () -> Unit,
-    onSaves: () -> Unit,
     onCloudSaves: () -> Unit,
     onUninstall: () -> Unit,
     onVerifyFiles: () -> Unit = {},
@@ -263,6 +264,9 @@ internal fun LibraryGameLaunchScreen(
             SourceTag(
                 sourceLabel = sourceLabel,
                 menuEnabled = steamMenuEnabled,
+                showVerifyFiles = showVerifyFiles,
+                showCheckForUpdate = showCheckForUpdate,
+                showWorkshop = showWorkshop,
                 areSteamActionsEnabled = areSteamActionsEnabled,
                 onVerifyFiles = onVerifyFiles,
                 onCheckForUpdate = onCheckForUpdate,
@@ -387,14 +391,6 @@ internal fun LibraryGameLaunchScreen(
                             size = actionIconSize,
                             onClick = onShortcut,
                         )
-                        if (showSavesAction) {
-                            LaunchIconActionButton(
-                                icon = Icons.Outlined.Save,
-                                contentDescription = stringResource(R.string.saves_import_export_title),
-                                size = actionIconSize,
-                                onClick = onSaves,
-                            )
-                        }
                         LaunchIconActionButton(
                             icon = Icons.Outlined.CloudSync,
                             contentDescription = stringResource(R.string.cloud_saves_title),
@@ -454,8 +450,26 @@ private fun LaunchScreenCutoutMode() {
         val originalCutoutMode = window.attributes.layoutInDisplayCutoutMode
         val originalWidth = window.attributes.width
         val originalHeight = window.attributes.height
+        val originalNavigationBarColor = window.navigationBarColor
+        val originalNavBarContrastEnforced =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                window.isNavigationBarContrastEnforced
+            } else {
+                false
+            }
 
         WindowCompat.setDecorFitsSystemWindows(window, false)
+        window.clearFlags(
+            WindowManager.LayoutParams.FLAG_TRANSLUCENT_NAVIGATION or
+                WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS,
+        )
+        // FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS is required for navigationBarColor to take effect.
+        // Compose Dialog windows use Theme.DeviceDefault.Dialog which doesn't set it by default,
+        // so the system would otherwise draw its own opaque navbar over our transparent request.
+        window.addFlags(
+            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS,
+        )
         window.setLayout(
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.MATCH_PARENT,
@@ -463,11 +477,23 @@ private fun LaunchScreenCutoutMode() {
         window.attributes = window.attributes.apply {
             layoutInDisplayCutoutMode = launchScreenCutoutMode()
         }
+        window.navigationBarColor = android.graphics.Color.TRANSPARENT
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            window.isNavigationBarContrastEnforced = false
+        }
 
         onDispose {
             window.attributes = window.attributes.apply {
                 layoutInDisplayCutoutMode = originalCutoutMode
             }
+            window.navigationBarColor = originalNavigationBarColor
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                window.isNavigationBarContrastEnforced = originalNavBarContrastEnforced
+            }
+            window.clearFlags(
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                    WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS,
+            )
             WindowCompat.setDecorFitsSystemWindows(window, true)
             window.setLayout(originalWidth, originalHeight)
         }
@@ -765,6 +791,9 @@ private fun LaunchMenuTextAction(
 private fun SourceTag(
     sourceLabel: String,
     menuEnabled: Boolean = false,
+    showVerifyFiles: Boolean = true,
+    showCheckForUpdate: Boolean = true,
+    showWorkshop: Boolean = true,
     areSteamActionsEnabled: Boolean = true,
     onVerifyFiles: () -> Unit = {},
     onCheckForUpdate: () -> Unit = {},
@@ -818,21 +847,27 @@ private fun SourceTag(
                 onDismissRequest = { menuOpen = false },
                 offset = IntOffset(0, anchorHeightPx + gapPx),
             ) {
-                LaunchSourceMenuItem(
-                    icon = Icons.Outlined.FactCheck,
-                    label = stringResource(R.string.store_game_verify_files),
-                    enabled = areSteamActionsEnabled,
-                ) { menuOpen = false; onVerifyFiles() }
-                LaunchSourceMenuItem(
-                    icon = Icons.Outlined.Refresh,
-                    label = stringResource(R.string.store_game_check_for_update),
-                    enabled = areSteamActionsEnabled,
-                ) { menuOpen = false; onCheckForUpdate() }
-                LaunchSourceMenuItem(
-                    icon = Icons.Outlined.Construction,
-                    label = stringResource(R.string.store_game_workshop),
-                    enabled = areSteamActionsEnabled,
-                ) { menuOpen = false; onWorkshop() }
+                if (showVerifyFiles) {
+                    LaunchSourceMenuItem(
+                        icon = Icons.Outlined.FactCheck,
+                        label = stringResource(R.string.store_game_verify_files),
+                        enabled = areSteamActionsEnabled,
+                    ) { menuOpen = false; onVerifyFiles() }
+                }
+                if (showCheckForUpdate) {
+                    LaunchSourceMenuItem(
+                        icon = Icons.Outlined.Refresh,
+                        label = stringResource(R.string.store_game_check_for_update),
+                        enabled = areSteamActionsEnabled,
+                    ) { menuOpen = false; onCheckForUpdate() }
+                }
+                if (showWorkshop) {
+                    LaunchSourceMenuItem(
+                        icon = Icons.Outlined.Construction,
+                        label = stringResource(R.string.store_game_workshop),
+                        enabled = areSteamActionsEnabled,
+                    ) { menuOpen = false; onWorkshop() }
+                }
             }
         }
     }

@@ -18,6 +18,7 @@ data class ParsedGogGame(
     val title: String,
     val slug: String,
     val imageUrl: String,
+    val heroImageUrl: String,
     val iconUrl: String,
     val developer: String,
     val publisher: String,
@@ -47,6 +48,7 @@ data class RawGogApiResponse(
     val downloads: Downloads?,
 ) {
     data class Images(
+        val background: String?,
         val logo2x: String?,
         val logo: String?,
         val icon: String?,
@@ -76,6 +78,11 @@ data class RawGogApiResponse(
         val total_size: Long?,
     )
 }
+
+data class GOGCloudCredentials(
+    val clientId: String,
+    val clientSecret: String,
+)
 
 /**
  * Direct HTTP client for GOG API operations.
@@ -250,16 +257,16 @@ object GOGApiClient {
         }
 
     /**
-     * Fetch client secret from GOG build metadata API
-     * @param gameId GOG game ID
-     * @param installPath Game install path (for platform detection, defaults to "windows")
-     * @return Client secret string, or null if not found
+     * Fetch Galaxy cloud-save credentials from GOG build metadata.
+     *
+     * Newer game info files can omit clientId, so both clientId and clientSecret
+     * are read from the content-system manifest when available.
      */
-    suspend fun getClientSecret(
+    suspend fun getCloudCredentials(
         context: Context,
         gameId: String,
         installPath: String?,
-    ): String? =
+    ): GOGCloudCredentials? =
         withContext(Dispatchers.IO) {
             try {
                 val platform = "windows" // For now, assume Windows (proton)
@@ -389,21 +396,63 @@ object GOGApiClient {
                     Timber.tag("GOG").d("[Cloud Saves] Parsing manifest JSON (${manifestStr.take(100)}...)")
                     val manifestJson = JSONObject(manifestStr)
 
-                    // Extract clientSecret from manifest
-                    val clientSecret = manifestJson.optString("clientSecret", "")
+                    val clientId = manifestJson.findStringValue("clientId", "client_id")
+                    val clientSecret = manifestJson.findStringValue("clientSecret", "client_secret")
+                    if (clientId.isEmpty()) {
+                        Timber.tag("GOG").w("[Cloud Saves] No clientId in manifest for game $gameId")
+                    }
                     if (clientSecret.isEmpty()) {
                         Timber.tag("GOG").w("[Cloud Saves] No clientSecret in manifest for game $gameId")
+                    }
+                    if (clientId.isEmpty() && clientSecret.isEmpty()) {
                         return@withContext null
                     }
 
-                    Timber.tag("GOG").d("[Cloud Saves] Successfully retrieved clientSecret for game $gameId")
-                    return@withContext clientSecret
+                    Timber.tag("GOG").d("[Cloud Saves] Successfully retrieved cloud credentials for game $gameId")
+                    return@withContext GOGCloudCredentials(clientId, clientSecret)
                 }
             } catch (e: Exception) {
-                Timber.tag("GOG").e(e, "[Cloud Saves] Failed to get clientSecret for game $gameId")
+                Timber.tag("GOG").e(e, "[Cloud Saves] Failed to get cloud credentials for game $gameId")
                 return@withContext null
             }
         }
+
+    /**
+     * Fetch client secret from GOG build metadata API.
+     */
+    suspend fun getClientSecret(
+        context: Context,
+        gameId: String,
+        installPath: String?,
+    ): String? =
+        getCloudCredentials(context, gameId, installPath)
+            ?.clientSecret
+            ?.takeIf { it.isNotEmpty() }
+
+    private fun JSONObject.findStringValue(vararg names: String): String {
+        for (name in names) {
+            optString(name, "").takeIf { it.isNotEmpty() }?.let { return it }
+        }
+
+        val iterator = keys()
+        while (iterator.hasNext()) {
+            when (val value = opt(iterator.next())) {
+                is JSONObject -> value.findStringValue(*names).takeIf { it.isNotEmpty() }?.let { return it }
+                is JSONArray -> value.findStringValue(*names).takeIf { it.isNotEmpty() }?.let { return it }
+            }
+        }
+        return ""
+    }
+
+    private fun JSONArray.findStringValue(vararg names: String): String {
+        for (i in 0 until length()) {
+            when (val value = opt(i)) {
+                is JSONObject -> value.findStringValue(*names).takeIf { it.isNotEmpty() }?.let { return it }
+                is JSONArray -> value.findStringValue(*names).takeIf { it.isNotEmpty() }?.let { return it }
+            }
+        }
+        return ""
+    }
 
     /**
      * Transform raw GOG API response into better format. Based on GOGDL implementation
@@ -418,15 +467,13 @@ object GOGApiClient {
     ): ParsedGogGame {
         // Extract image URLs and add https: protocol if missing
         val images = rawResponse.optJSONObject("images")
-        var logo2x = images?.optString("logo2x", "") ?: ""
-        var logo = images?.optString("logo", "") ?: ""
-        var icon = images?.optString("icon", "") ?: ""
-
-        if (logo2x.startsWith("//")) logo2x = "https:$logo2x"
-        if (logo.startsWith("//")) logo = "https:$logo"
-        if (icon.startsWith("//")) icon = "https:$icon"
+        val background = normalizeImageUrl(images?.optString("background", "") ?: "")
+        val logo2x = normalizeImageUrl(images?.optString("logo2x", "") ?: "")
+        val logo = normalizeImageUrl(images?.optString("logo", "") ?: "")
+        val icon = normalizeImageUrl(images?.optString("icon", "") ?: "")
 
         val imageUrl = logo2x.ifEmpty { logo }
+        val heroImageUrl = background.ifEmpty { getScreenshotHeroUrl(rawResponse) }
 
         // Extract developer (first from array)
         val developers = rawResponse.optJSONArray("developers")
@@ -504,6 +551,7 @@ object GOGApiClient {
             title = rawResponse.optString("title", "Unknown"),
             slug = rawResponse.optString("slug", ""),
             imageUrl = imageUrl,
+            heroImageUrl = heroImageUrl,
             iconUrl = icon,
             developer = developer,
             publisher = publisher,
@@ -515,5 +563,29 @@ object GOGApiClient {
             isSecret = isSecret,
             isDlc = isDlc,
         )
+    }
+
+    private fun normalizeImageUrl(url: String): String =
+        when {
+            url.startsWith("//") -> "https:$url"
+            else -> url
+        }
+
+    private fun getScreenshotHeroUrl(rawResponse: JSONObject): String {
+        val screenshots = rawResponse.optJSONArray("screenshots") ?: return ""
+        for (i in 0 until screenshots.length()) {
+            val screenshot = screenshots.optJSONObject(i) ?: continue
+            val formattedImages = screenshot.optJSONArray("formatted_images") ?: continue
+            val preferredNames = listOf("ggvgl_2x", "ggvgl", "ggvgm_2x", "ggvgm")
+            for (preferredName in preferredNames) {
+                for (j in 0 until formattedImages.length()) {
+                    val image = formattedImages.optJSONObject(j) ?: continue
+                    if (image.optString("formatter_name") == preferredName) {
+                        return normalizeImageUrl(image.optString("image_url", ""))
+                    }
+                }
+            }
+        }
+        return ""
     }
 }
